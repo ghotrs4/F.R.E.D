@@ -47,8 +47,9 @@ test_data_full = Food101(
 # 4. CREATE A SMALL SUBSET (20 IMAGES) FOR FAST TESTING
 # -------------------------------------------------------------
 # Food-101 has 75,750 training images — too slow for testing.
-# So we take only the first 20 images to verify our code works.
-train_subset_indices = list(range(20))    # Use only 20 images
+# So we take only the first range_num images to verify our code works.
+range_num = 1000
+train_subset_indices = list(range(range_num))    # Use only range_num images
 train_data = Subset(train_data_full, train_subset_indices)
 
 # DataLoader lets the model load images in batches.
@@ -82,7 +83,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)  # Learning rate
 # -------------------------------------------------------------
 # 7. TRAINING LOOP
 # -------------------------------------------------------------
-epochs = 3   # Just 3 epochs for testing — since dataset is tiny
+epochs = 10   # Just 10 epochs for testing
 
 for epoch in range(epochs):
     model.train()             # Set model to training mode
@@ -123,4 +124,4 @@ with torch.no_grad():  # No gradient needed for testing
         correct += (predicted == labels).sum().item()
 
 accuracy = 100 * correct / total
-print(f"\nAccuracy on 20 Food-101 images: {accuracy:.2f}%")
+print(f"\nAccuracy on {range_num} Food-101 images: {accuracy:.2f}%")
