@@ -9,6 +9,7 @@ import torchvision.transforms as transforms   # Image transforms
 from torch.utils.data import DataLoader, Subset   # For loading subsets
 from torchvision.datasets import Food101          # Food-101 dataset
 from torchvision import models                    # Pretrained CNNs
+from PIL import Image              # For loading images
 
 
 # -------------------------------------------------------------
@@ -44,7 +45,7 @@ test_data_full = Food101(
 
 
 # -------------------------------------------------------------
-# 4. CREATE A SMALL SUBSET (20 IMAGES) FOR FAST TESTING
+# 4. CREATE A SMALL SUBSET (1000 IMAGES) FOR FAST TESTING
 # -------------------------------------------------------------
 # Food-101 has 75,750 training images — too slow for testing.
 # So we take only the first range_num images to verify our code works.
@@ -106,7 +107,7 @@ for epoch in range(epochs):
 
 
 # -------------------------------------------------------------
-# 8. TEST ACCURACY ON THE SAME 20 IMAGES
+# 8. TEST ACCURACY ON THE TRAINING SUBSET
 # -------------------------------------------------------------
 model.eval()       # Switch to evaluation mode
 correct = 0        # Count correctly predicted images
@@ -125,3 +126,48 @@ with torch.no_grad():  # No gradient needed for testing
 
 accuracy = 100 * correct / total
 print(f"\nAccuracy on {range_num} Food-101 images: {accuracy:.2f}%")
+
+
+# -------------------------------------------------------------
+# 9. SAVE THE MODEL
+# -------------------------------------------------------------
+torch.save(model.state_dict(), "food_classifier.pth")
+print("\nModel saved as 'food_classifier.pth'")
+
+
+# -------------------------------------------------------------
+# 10. FUNCTION TO CLASSIFY A SINGLE IMAGE
+# -------------------------------------------------------------
+
+# Classify a food image from a file path
+def predict_food(image_path):
+  
+    # Get class names from the dataset
+    class_names = train_data_full.classes
+    
+    # Load and preprocess the image
+    img = Image.open(image_path).convert('RGB')
+    img_tensor = transform(img).unsqueeze(0)  # Add batch dimension
+    img_tensor = img_tensor.to(device)
+    
+    # Make prediction
+    model.eval()
+    with torch.no_grad():
+        output = model(img_tensor)
+        probabilities = torch.nn.functional.softmax(output[0], dim=0)
+        confidence, predicted_idx = torch.max(probabilities, 0)
+    
+    predicted_class = class_names[predicted_idx.item()]
+    confidence_percent = confidence.item() * 100
+    
+    return predicted_class, confidence_percent
+
+
+# -------------------------------------------------------------
+# 11. EXAMPLE USAGE - CLASSIFY A NEW IMAGE
+# -------------------------------------------------------------
+# Uncomment the lines below to test with your own image:
+#
+result_class, result_confidence = predict_food("data/image.jpg")
+print(f"\nPrediction: {result_class}")
+print(f"Confidence: {result_confidence:.2f}%")
