@@ -1,8 +1,0 @@
-id,name,freshnessScore,daysUntilSpoilage,timeInFridge,foodGroup
-1,Broccoli,5,3,2 days,produce
-2,Yogurt,41,7,1 day,dairy
-3,Homemade Leftovers,70,2,3 days,prepared
-4,Eggs,20,14,5 days,dairy
-5,Orange Juice,88,5,2 days,beverage
-8,Ketchup,98,30,10 days,condiment
-7,Apples,89,8,1 day,produce

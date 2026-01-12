@@ -1,2 +1,2 @@
-item_id,food_name,food_category,purchase_date,entry_date,expiration_date,temp_at_entry,humidity_at_entry,packaging_type,location,quantity,cumulative_temp_abuse,last_check_date,freshness_score,days_until_spoilage,safety_category
-ITEM_001,Test Milk,Dairy,2025-12-05,2025-12-05T17:29:28.439833,,4.5,85.0,Carton,main,1,0.0,,100.0,0.0,Fresh
+item_id,food_name,food_category,entry_date,expiration_date,temp_at_entry,humidity_at_entry,packaging_type,cumulative_temp_abuse,freshness_score,days_until_spoilage,safety_category
+ITEM_001,Test Milk,Dairy,2025-12-05T17:29:28.439833,,4.5,85.0,Carton,0.0,100.0,0.0,Fresh
