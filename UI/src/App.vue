@@ -1,23 +1,61 @@
 <!-- to run: "npm run dev" /> -->
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
-import FilterItems from './components/FilterItems.vue'
+import { RouterView, RouterLink } from 'vue-router'
+import AppSidebar from './components/AppSidebar.vue'
+import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar'
 </script>
 
 <template>
-  <div>
-    <!-- <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://vuejs.org/" target="_blank">
-      <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-    </a> -->
-  </div>
-  <!-- <HelloWorld msg="Fridge Registry and Expiry Detector" /> -->
-  <FilterItems msg="Fridge Registry and Expiry Detector" />
+  <SidebarProvider class="sidebar-provider">
+    <AppSidebar />
+    <div class="content-wrapper">
+      <SidebarTrigger class="sidebar-trigger" />
+      <main>
+        <RouterView />
+      </main>
+    </div>
+  </SidebarProvider>
 </template>
 
 <style scoped>
+.sidebar-provider {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+}
+
+.content-wrapper {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+}
+
+.sidebar-trigger {
+  flex-shrink: 0;
+  padding: 1rem;
+  display: flex;
+  align-items: flex-start;
+}
+
+main {
+  flex: 1;
+  max-width: unset;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  overflow: auto;
+  height: 100%;
+  width: 100%;
+}
+
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  padding: 1rem;
+  z-index: 1000;
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;
