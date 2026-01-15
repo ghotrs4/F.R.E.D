@@ -35,6 +35,16 @@ const alerts = computed(() => {
   const alertList = []
   
   foods.value.forEach(food => {
+    // If food has spoiled (freshness score 0), only show spoiled alert
+    if (food.freshnessScore <= 0) {
+      alertList.push({
+        type: 'critical',
+        message: `${food.name} has likely spoiled! Check and discard immediately.`,
+        food: food
+      })
+      return // Skip other alerts for this food
+    }
+    
     if (food.daysUntilSpoilage <= 1) {
       alertList.push({
         type: 'critical',
@@ -52,7 +62,7 @@ const alerts = computed(() => {
     if (food.freshnessScore < 15) {
       alertList.push({
         type: 'warning',
-        message: `${food.name} has low freshness (${food.freshnessScore}/100).`,
+        message: `${food.name} has low freshness (${Math.round(food.freshnessScore)}/100).`,
         food: food
       })
     }
@@ -71,10 +81,10 @@ const handleCardClick = (cardId) => {
 
 const getFreshnessColor = (score) => {
   if (score <= 15) return '#8B0000' // Dark red
-  if (score >= 16 && score <= 39) return '#FF6B6B' // Light red
-  if (score >= 40 && score <= 59) return '#FFD700' // Yellow
-  if (score >= 60 && score <= 84) return '#ADFF2F' // Yellow-green (lighter and more yellow)
-  if (score >= 85) return '#228B22' // Forest green (lighter than dark green)
+  if (score > 15 && score <= 39) return '#FF6B6B' // Light red
+  if (score > 39 && score <= 59) return '#FFD700' // Yellow
+  if (score > 59 && score <= 84) return '#ADFF2F' // Yellow-green (lighter and more yellow)
+  if (score > 84) return '#228B22' // Forest green (lighter than dark green)
   return '#D3D3D3' // Default gray
 }
 
@@ -143,7 +153,10 @@ onUnmounted(() => {
   <div class="sections">
     <section class="section" @click="navigateToInventory">
       <h2>Inventory</h2>
-      <div class="inventory-list">
+      <div v-if="lowestFreshnessFoods.length === 0" class="empty-inventory">
+        <p>No items to display</p>
+      </div>
+      <div v-else class="inventory-list">
         <div 
           v-for="food in lowestFreshnessFoods" 
           :key="food.id"
@@ -154,7 +167,7 @@ onUnmounted(() => {
           <span 
             class="freshness-score" 
             :style="{ color: getFreshnessColor(food.freshnessScore) }"
-          >{{ food.freshnessScore }}</span>
+          >{{ Math.round(food.freshnessScore) }}</span>
         </div>
       </div>
     </section>
@@ -225,7 +238,7 @@ onUnmounted(() => {
             <div class="alert-content">
               <p class="alert-message">{{ alert.message }}</p>
               <div class="alert-details">
-                <span>Freshness: {{ alert.food.freshnessScore }}/100</span>
+                <span>Freshness: {{ Math.round(alert.food.freshnessScore) }}/100</span>
                 <span>•</span>
                 <span>Days left: {{ alert.food.daysUntilSpoilage }}</span>
               </div>
@@ -251,23 +264,21 @@ onUnmounted(() => {
 .sections {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 2rem;
   width: 100%;
-  max-width: 1200px;
   margin-top: 2rem;
+  padding: 0 1rem;
 }
 
 .alerts-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   width: 100%;
-  max-width: 1200px;
   margin-top: 2rem;
-}
-
-.alerts-section {
-  width: 100%;
+  padding: 0 1rem;
 }
 
 .section {
@@ -277,6 +288,14 @@ onUnmounted(() => {
   padding: 1.5rem;
   cursor: pointer;
   transition: all 0.3s ease;
+  flex: 1;
+  min-width: 250px;
+  max-width: 300px;
+}
+
+.alerts-section {
+  width: 100%;
+  max-width: calc(900px + 4rem);
 }
 
 .section:hover {
@@ -290,12 +309,28 @@ onUnmounted(() => {
   margin: 0 0 1rem 0;
   font-size: 1.5rem;
   color: oklch(0.9 0 0);
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .inventory-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.empty-inventory {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100px;
+  padding: 2rem;
+}
+
+.empty-inventory p {
+  font-size: 1rem;
+  color: oklch(0.6 0 0);
+  font-weight: 500;
 }
 
 .food-item {
@@ -388,6 +423,8 @@ onUnmounted(() => {
   color: oklch(0.9 0 0);
   font-size: 0.9rem;
   line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .more-alerts {
@@ -519,5 +556,109 @@ onUnmounted(() => {
   color: oklch(0.7 0 0);
   font-size: 0.875rem;
   text-align: left;
+}
+
+/* Responsive Design - Tablet */
+@media (max-width: 1024px) {
+  .home-container {
+    padding: 1.5rem;
+  }
+
+  .sections-container {
+    flex-direction: column;
+  }
+
+  .section {
+    width: 100%;
+  }
+}
+
+/* Responsive Design - Mobile */
+@media (max-width: 768px) {
+  .home-container {
+    padding: 1rem;
+  }
+
+  .greeting {
+    font-size: 1.75rem;
+  }
+
+  .see-all-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .food-item {
+    padding: 0.5rem 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .food-name {
+    font-size: 0.95rem;
+  }
+
+  .freshness-score {
+    align-self: flex-end;
+  }
+
+  .alert-item {
+    padding: 0.75rem;
+  }
+
+  .alert-message {
+    font-size: 0.9rem;
+  }
+
+  .alert-details {
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+  }
+}
+
+/* Responsive Design - Small Mobile */
+@media (max-width: 480px) {
+  .home-container {
+    padding: 0.75rem;
+  }
+
+  .greeting {
+    font-size: 1.5rem;
+  }
+
+  .section h2 {
+    font-size: 1.25rem;
+  }
+
+  .food-item {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .food-name {
+    font-size: 0.875rem;
+  }
+
+  .freshness-score {
+    font-size: 0.8rem;
+  }
+
+  .see-all-button {
+    width: 100%;
+    padding: 0.75rem;
+  }
+}
+
+/* Improve touch targets for mobile */
+@media (hover: none) and (pointer: coarse) {
+  .food-item,
+  .see-all-button,
+  .alert-item {
+    min-height: 44px;
+  }
+
+  .see-all-button {
+    padding: 0.75rem 1.25rem;
+  }
 }
 </style>

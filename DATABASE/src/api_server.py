@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from spoilage_algorithm import predict_spoilage
 from sensor_interface import get_sensor
 
@@ -45,7 +45,9 @@ def read_foods():
                     current_humidity=current_humidity,
                     packaging_type=row['packaging_type'] if row['packaging_type'] else 'sealed',
                     cumulative_temp_abuse=cumulative_temp_abuse,
-                    expiration_date=expiration_date
+                    expiration_date=expiration_date,
+                    food_name=row['food_name'] if row['food_name'] else '',
+                    storage_location=row.get('storage_location', 'regular')
                 )
                 
                 # Transform CSV data to match frontend format with real-time calculations
@@ -56,6 +58,10 @@ def read_foods():
                     'daysUntilSpoilage': int(prediction['days_until_spoilage']),
                     'timeInFridge': calculate_time_in_fridge(row['entry_date']),
                     'foodGroup': row['food_category'].lower() if row['food_category'] else 'other',
+                    'packagingType': row['packaging_type'] if row['packaging_type'] else '',
+                    'expirationDate': row['expiration_date'] if row['expiration_date'] else '',
+                    'storageLocation': row.get('storage_location', 'regular'),
+                    'cumulativeTempAbuse': cumulative_temp_abuse,
                     'safetyCategory': prediction['safety_category'],
                     'warnings': prediction.get('warnings', [])
                 }
@@ -98,18 +104,28 @@ def write_foods(foods):
                 existing_data[item_id]['food_name'] = food['name']
                 existing_data[item_id]['freshness_score'] = str(food['freshnessScore'])
                 existing_data[item_id]['days_until_spoilage'] = str(food['daysUntilSpoilage'])
+                existing_data[item_id]['safety_category'] = food.get('safetyCategory', 'Fresh')
                 existing_data[item_id]['food_category'] = food['foodGroup'].capitalize()
+                if 'packagingType' in food:
+                    existing_data[item_id]['packaging_type'] = food['packagingType']
+                if 'expirationDate' in food:
+                    existing_data[item_id]['expiration_date'] = food['expirationDate']
+                if 'storageLocation' in food:
+                    existing_data[item_id]['storage_location'] = food['storageLocation']
             else:
                 # Create new item
+                days_in_fridge = food.get('daysInFridge', 0)
+                entry_date = datetime.now() - timedelta(days=days_in_fridge)
                 existing_data[item_id] = {
                     'item_id': item_id,
                     'food_name': food['name'],
                     'food_category': food['foodGroup'].capitalize(),
-                    'entry_date': datetime.now().isoformat(),
-                    'expiration_date': '',
+                    'entry_date': entry_date.isoformat(),
+                    'expiration_date': food.get('expirationDate', ''),
                     'temp_at_entry': '4.5',
                     'humidity_at_entry': '85.0',
-                    'packaging_type': '',
+                    'packaging_type': food.get('packagingType', 'sealed'),
+                    'storage_location': food.get('storageLocation', 'regular'),
                     'cumulative_temp_abuse': '0.0',
                     'freshness_score': str(food['freshnessScore']),
                     'days_until_spoilage': str(food['daysUntilSpoilage']),
@@ -166,7 +182,11 @@ def create_food():
         'freshnessScore': data.get('freshnessScore', 100),
         'daysUntilSpoilage': data.get('daysUntilSpoilage', 7),
         'timeInFridge': '0 days',
-        'foodGroup': data.get('foodGroup', 'other')
+        'foodGroup': data.get('foodGroup', 'other'),
+        'packagingType': data.get('packagingType', 'sealed'),
+        'expirationDate': data.get('expirationDate', ''),
+        'storageLocation': data.get('storageLocation', 'regular'),
+        'daysInFridge': data.get('daysInFridge', 0)
     }
     
     foods.append(new_food)
@@ -188,7 +208,10 @@ def update_food(item_id):
                 'freshnessScore': data.get('freshnessScore', food['freshnessScore']),
                 'daysUntilSpoilage': data.get('daysUntilSpoilage', food['daysUntilSpoilage']),
                 'timeInFridge': food['timeInFridge'],
-                'foodGroup': data.get('foodGroup', food['foodGroup'])
+                'foodGroup': data.get('foodGroup', food['foodGroup']),
+                'packagingType': data.get('packagingType', food.get('packagingType', '')),
+                'expirationDate': data.get('expirationDate', food.get('expirationDate', '')),
+                'storageLocation': data.get('storageLocation', food.get('storageLocation', 'regular'))
             }
             if write_foods(foods):
                 return jsonify(foods[i])

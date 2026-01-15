@@ -1,2 +1,11 @@
-item_id,food_name,food_category,entry_date,expiration_date,temp_at_entry,humidity_at_entry,packaging_type,cumulative_temp_abuse,freshness_score,days_until_spoilage,safety_category
-ITEM_001,Test Milk,Dairy,2025-12-05T17:29:28.439833,,4.5,85.0,Carton,0.0,100.0,0.0,Fresh
+item_id,food_name,food_category,entry_date,expiration_date,temp_at_entry,humidity_at_entry,packaging_type,storage_location,cumulative_temp_abuse,freshness_score,days_until_spoilage,safety_category
+ITEM_001,Apples,Produce,2026-01-13T09:54:50.870556,,4.5,85.0,loose,humidity-controlled,0.0,88.0,15,Fresh
+ITEM_002,Coleslaw Mix,Produce,2026-01-13T10:01:01.288962,2026-01-22,4.5,85.0,opened,humidity-controlled,0.0,73.2,5,Good
+ITEM_003,Eggs,Dairy,2026-01-13T10:01:32.829030,2026-02-06,4.5,85.0,carton,regular,0.0,91.1,21,Fresh
+ITEM_004,Cheddar Cheese,Dairy,2026-01-14T10:02:10.377897,2026-02-02,4.5,85.0,air-tight container,regular,0.0,94.1,17,Fresh
+ITEM_005,Yogurt,Dairy,2026-01-13T10:03:00.136447,2026-02-02,4.5,85.0,air-tight container,regular,0.0,89.3,17,Fresh
+ITEM_006,Tofu,Other,2026-01-13T10:03:27.311921,2026-02-02,4.5,85.0,sealed,regular,0.0,91.1,21,Fresh
+ITEM_007,Taco Filling,Prepared,2026-01-14T10:04:11.262605,,4.5,85.0,air-tight container,regular,0.0,72.8,2,Good
+ITEM_008,Nut Butter,Condiment,2026-01-05T10:05:27.309656,2027-02-02,4.5,85.0,air-tight container,regular,0.0,92.7,127,Fresh
+ITEM_009,Maple Syrup,Condiment,2025-11-14T10:07:57.638745,2027-01-04,4.5,85.0,air-tight container,regular,0.0,85.1,353,Fresh
+ITEM_010,Sun-Dried Tomatoes,Condiment,2026-01-13T10:08:54.580925,2026-04-15,4.5,85.0,air-tight container,regular,0.0,97.7,89,Fresh

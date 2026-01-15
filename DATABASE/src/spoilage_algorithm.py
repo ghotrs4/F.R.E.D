@@ -36,6 +36,15 @@ FOOD_DATABASE = {
         'temp_abuse_threshold': 12.0,
     },
     
+    # APPLES (whole apples last 4-6 weeks)
+    'apple': {
+        'name': 'Apple',
+        'shelf_life_days': 35,
+        'optimal_temp': 4.0,
+        'temp_sensitivity': 1.2,
+        'temp_abuse_threshold': 24.0,
+    },
+    
     # BEVERAGE
     'beverage': {
         'name': 'Beverage',
@@ -107,18 +116,30 @@ def calculate_temp_abuse_factor(cumulative_hours, threshold_hours):
         return max(0.2, 0.9 * math.exp(-excess / threshold_hours))
 
 
-def calculate_packaging_factor(packaging_type):
-    """Get packaging protection factor"""
+def calculate_packaging_factor(packaging_type, food_category='other'):
+    """
+    Get packaging protection factor.
+    For produce, loose packaging is beneficial (better air circulation).
+    For other foods, loose packaging accelerates spoilage.
+    """
     factors = {
-        'vacuum': 1.2,
-        'sealed': 1.0,
+        'sealed': 1.2,
+        'air-tight container': 1.0,
         'opened': 0.7,
-        'loose': 0.5,
+        'loose': 0.5,  # Default for non-produce
         'carton': 1.0,
         'bottle': 1.1,
         'jar': 1.0,
     }
-    return factors.get(packaging_type.lower() if packaging_type else 'sealed', 1.0)
+    
+    pkg_type = packaging_type.lower() if packaging_type else 'sealed'
+    base_factor = factors.get(pkg_type, 1.0)
+    
+    # Special handling for produce with loose packaging
+    if pkg_type == 'loose' and food_category == 'produce':
+        return 1.1  # Loose produce benefits from air circulation
+    
+    return base_factor
 
 
 def calculate_freshness_score(days_since_purchase, effective_shelf_life):
@@ -150,7 +171,9 @@ def predict_spoilage(
     current_humidity=50.0,
     packaging_type='sealed',
     cumulative_temp_abuse=0.0,
-    expiration_date=None
+    expiration_date=None,
+    food_name='',
+    storage_location='regular'
 ):
     """
     Main spoilage prediction function.
@@ -160,9 +183,11 @@ def predict_spoilage(
         purchase_date: datetime when purchased
         current_temp: Current temperature in Celsius
         current_humidity: Current relative humidity %
-        packaging_type: 'vacuum', 'sealed', 'opened', or 'loose'
+        packaging_type: 'sealed', 'air-tight container', 'opened', 'loose', 'carton', 'bottle', or 'jar'
         cumulative_temp_abuse: Total hours above safe temperature
         expiration_date: Optional expiration date
+        food_name: Name of the food item (used to detect specific items like apples)
+        storage_location: 'regular' or 'humidity-controlled' (crisper drawer)
     
     Returns:
         dict with:
@@ -172,8 +197,13 @@ def predict_spoilage(
             - warnings: list of warning messages
     """
     
-    # Normalize category to lowercase
-    food_category = food_category.lower() if food_category else 'other'
+    # Check if food name matches a specific item in database
+    food_name_lower = food_name.lower() if food_name else ''
+    if 'apple' in food_name_lower and 'apple' in FOOD_DATABASE:
+        food_category = 'apple'
+    else:
+        # Normalize category to lowercase
+        food_category = food_category.lower() if food_category else 'other'
     
     # Get food parameters
     if food_category not in FOOD_DATABASE:
@@ -202,10 +232,18 @@ def predict_spoilage(
         food['temp_abuse_threshold']
     )
     
-    packaging_factor = calculate_packaging_factor(packaging_type)
+    packaging_factor = calculate_packaging_factor(packaging_type, food_category)
     
     # Calculate effective shelf life
     effective_shelf_life = baseline_shelf_life * temp_factor * abuse_factor * packaging_factor
+    
+    # Special case: produce in humidity-controlled storage lasts longer
+    if food_category == 'produce' and storage_location.lower() == 'humidity-controlled':
+        effective_shelf_life *= 1.3
+    
+    # Special case: opened condiments with expiration dates spoil faster
+    if food_category == 'condiment' and packaging_type.lower() == 'opened' and expiration_date:
+        effective_shelf_life *= 0.5
     
     # Calculate outputs
     freshness_score = calculate_freshness_score(days_since_purchase, effective_shelf_life)

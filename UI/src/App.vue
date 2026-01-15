@@ -14,6 +14,7 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar'
         <RouterView />
       </main>
     </div>
+    <div class="right-spacer"></div>
   </SidebarProvider>
 </template>
 
@@ -22,6 +23,11 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar'
   height: 100vh;
   width: 100vw;
   display: flex;
+}
+
+.right-spacer {
+  width: calc(40px + 2rem);
+  flex-shrink: 0;
 }
 
 .content-wrapper {
@@ -67,5 +73,34 @@ nav {
 }
 .logo.vue:hover {
   filter: drop-shadow(0 0 2em #42b883aa);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .right-spacer {
+    display: none;
+  }
+
+  .content-wrapper {
+    flex-direction: column;
+  }
+
+  .sidebar-trigger {
+    padding: 0.75rem;
+  }
+
+  main {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar-trigger {
+    padding: 0.5rem;
+  }
+
+  main {
+    padding: 0.75rem;
+  }
 }
 </style>
