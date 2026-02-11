@@ -6,8 +6,8 @@ import torch.nn as nn              # Neural network building blocks
 import torch.optim as optim        # Optimizers (Adam, SGD, etc.)
 import torchvision                 # Vision datasets + models
 import torchvision.transforms as transforms   # Image transforms
-from torch.utils.data import DataLoader, Subset   # For loading subsets
-from torchvision.datasets import Food101          # Food-101 dataset
+from torch.utils.data import DataLoader, Subset, ConcatDataset   # For loading subsets
+from torchvision.datasets import Food101, ImageFolder          # Food-101 dataset
 from torchvision import models                    # Pretrained CNNs
 from PIL import Image              # For loading images
 import sys
@@ -70,16 +70,27 @@ test_data_full = Food101(
 
 
 # -------------------------------------------------------------
-# 4. CREATE A SMALL SUBSET (1000 IMAGES) FOR FAST TESTING
+# 4. COMBINE FOOD-101 WITH CUSTOM IMAGES
 # -------------------------------------------------------------
-# Food-101 has 75,750 training images — too slow for testing.
-# So we take only the first range_num images to verify our code works.
+def create_combined_dataset():
+    """Combine Food-101 with custom images from ./data/custom_foods"""
+    
+    # Load custom images (organized in folders by category)
+    # Structure: ./data/custom_foods/category_name/image.jpg
+    custom_dataset = ImageFolder(
+        root="./data/custom_foods",
+        transform=transform
+    )
+    
+    # Combine datasets
+    combined_dataset = ConcatDataset([train_data_full, custom_dataset])
+    
+    # Calculate total number of classes
+    num_classes = len(train_data_full.classes) + len(custom_dataset.classes)
+    all_classes = train_data_full.classes + custom_dataset.classes
+    
+    return combined_dataset, num_classes, all_classes, len(custom_dataset)
 
-# SUBSET VERSION (using only 1000 training images)
-# range_num = 1000
-# train_subset_indices = list(range(range_num))    # Use only range_num images
-# train_data = Subset(train_data_full, train_subset_indices)
-# train_loader = DataLoader(train_data, batch_size=5, shuffle=True)
 
 def create_data_loader(train_data, batch_size, num_workers):
     """Create DataLoader with proper settings"""
@@ -98,8 +109,8 @@ def train_model():
     
     setup_logging()
     
-    # FULL DATASET VERSION (using all 75,750 training images)
-    train_data = train_data_full
+    # COMBINED DATASET VERSION (Food-101 + custom images)
+    train_data, num_classes, class_names, custom_count = create_combined_dataset()
     
     # Use multiple workers for faster data loading
     BATCH_SIZE = 256  # Larger batches = better GPU utilization
@@ -112,7 +123,7 @@ def train_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-    model.fc = nn.Linear(model.fc.in_features, 101)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
     model = model.to(device)
     
     # -------------------------------------------------------------
@@ -136,6 +147,11 @@ def train_model():
     log_print(f"Device: {device}")
     log_print(f"Total batches per epoch: {total_batches}")
     log_print(f"Images per epoch: {len(train_data)}")
+    log_print(f"  - Food-101 images: {len(train_data_full)}")
+    log_print(f"  - Custom images: {custom_count}")
+    log_print(f"Number of classes: {num_classes}")
+    log_print(f"  - Food-101 classes: {len(train_data_full.classes)}")
+    log_print(f"  - Custom classes: {num_classes - len(train_data_full.classes)}")
     log_print(f"Batch size: {BATCH_SIZE}")
     log_print(f"Num workers: {NUM_WORKERS}")
     log_print(f"Number of epochs: {epochs}")
@@ -200,14 +216,19 @@ def train_model():
             correct += (predicted == labels).sum().item()
 
     accuracy = 100 * correct / total
-    log_print(f"\nTraining accuracy on {len(train_data)} Food-101 images: {accuracy:.2f}%")
+    log_print(f"\nTraining accuracy on {len(train_data)} images: {accuracy:.2f}%")
 
     # -------------------------------------------------------------
     # 9. SAVE THE MODEL
     # -------------------------------------------------------------
     model_filename = f"food_classifier_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pth"
-    torch.save(model.state_dict(), model_filename)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'num_classes': num_classes,
+        'class_names': class_names
+    }, model_filename)
     log_print(f"\nModel saved as '{model_filename}'")
+    log_print(f"Saved with {num_classes} classes")
     log_print(f"Training completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     if log_file:
