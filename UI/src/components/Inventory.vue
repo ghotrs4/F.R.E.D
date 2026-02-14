@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { loadFoodsFromCSV, createFood, updateFood, deleteFood } from '../utils/csvParser'
+import { recordItemOutcome } from '../utils/statsApi'
 
 defineProps({
   msg: String,
@@ -33,6 +34,7 @@ const newFood = ref({
   foodGroup: 'other',
   daysInFridge: 0,
   packagingType: 'sealed',
+  storageLocation: 'regular',
   expirationDate: ''
 })
 
@@ -57,8 +59,17 @@ const storageLocations = [
 
 // Function to parse time in fridge string to days
 const parseTimeInFridge = (timeString) => {
-  const match = timeString.match(/(\d+)/)
-  return match ? parseInt(match[1]) : 0
+  const match = timeString.match(/(\d+)\s*(hour|day)s?/i)
+  if (!match) return 0
+  
+  const value = parseInt(match[1])
+  const unit = match[2].toLowerCase()
+  
+  // Convert hours to days for proper comparison
+  if (unit === 'hour') {
+    return value / 24
+  }
+  return value
 }
 
 // Computed property for filtered and sorted cards
@@ -133,9 +144,12 @@ const getAlertsForFood = (food) => {
   }
   
   if (food.daysUntilSpoilage <= 1) {
+    const message = food.daysUntilSpoilage === 0 
+      ? `Will likely start to spoil in the next 24 hours!`
+      : `Will spoil in ${food.daysUntilSpoilage} day${food.daysUntilSpoilage !== 1 ? 's' : ''}!`
     alerts.push({
       type: 'critical',
-      message: `Will spoil in ${food.daysUntilSpoilage} day${food.daysUntilSpoilage !== 1 ? 's' : ''}!`
+      message: message
     })
   } else if (food.daysUntilSpoilage === 2) {
     alerts.push({
@@ -147,7 +161,7 @@ const getAlertsForFood = (food) => {
   if (food.freshnessScore < 15) {
     alerts.push({
       type: 'warning',
-      message: `Low freshness (${food.freshnessScore}/100).`
+      message: `Low freshness (${Math.round(food.freshnessScore)}/100).`
     })
   }
   
@@ -252,9 +266,14 @@ const closeDeleteConfirm = () => {
   showDeleteConfirm.value = false
 }
 
+const deleteItemOutcome = ref('consumed') // Track why the item is being removed
+
 const confirmDelete = async () => {
   try {
     if (!selectedCard.value) return
+    
+    // Record the outcome before deleting
+    await recordItemOutcome(selectedCard.value.id, deleteItemOutcome.value)
     
     // Delete the food item via API
     await deleteFood(selectedCard.value.id)
@@ -270,6 +289,7 @@ const confirmDelete = async () => {
     showDeleteConfirm.value = false
     showPopup.value = false
     selectedCard.value = null
+    deleteItemOutcome.value = 'consumed' // Reset to default
   } catch (error) {
     console.error('Error deleting food:', error)
     alert('Failed to delete food item. Please try again.')
@@ -649,8 +669,25 @@ const getFreshnessColor = (score) => {
           <h3>Remove From Inventory</h3>
         </div>
         <div class="confirm-body">
-          <p>Confirm that this item has been permanently removed from your fridge.</p>
+          <p>What happened to this item?</p>
           <p class="item-name">{{ selectedCard?.name }}</p>
+          
+          <div class="outcome-options">
+            <label class="outcome-option">
+              <input type="radio" v-model="deleteItemOutcome" value="consumed" />
+              <span class="outcome-label">
+                <span class="outcome-icon">✅</span>
+                <span>Consumed</span>
+              </span>
+            </label>
+            <label class="outcome-option">
+              <input type="radio" v-model="deleteItemOutcome" value="wasted" />
+              <span class="outcome-label">
+                <span class="outcome-icon">❌</span>
+                <span>Wasted/Spoiled</span>
+              </span>
+            </label>
+          </div>
         </div>
         <div class="confirm-actions">
           <button type="button" class="confirm-cancel-button" @click="closeDeleteConfirm">Cancel</button>
@@ -678,11 +715,11 @@ const getFreshnessColor = (score) => {
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(20px, 300px));
   gap: 1.5rem;
   margin-top: 1rem;
   width: 100%;
-  padding: 0 1rem;
+  padding: 0 1rem 2rem 1rem;
 }
 
 .card-item {
@@ -760,7 +797,7 @@ const getFreshnessColor = (score) => {
 .controls-container {
   display: flex;
   flex-wrap: wrap;
-  gap: 2rem;
+  /* gap: 2rem; */
   align-items: center;
   margin-bottom: 1rem;
   padding: 0 1rem;
@@ -802,8 +839,6 @@ const getFreshnessColor = (score) => {
   margin: 0;
   font-size: 1rem;
   color: oklch(0.9 0 0);
-  width: 100%;
-  flex-basis: 100%;
 }
 
 .sort-controls button {
@@ -1169,7 +1204,56 @@ const getFreshnessColor = (score) => {
   color: oklch(0.95 0 0);
   text-align: center;
   font-size: 1.1rem;
-  margin: 0;
+  margin: 0 0 1.5rem 0;
+}
+
+.outcome-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.outcome-option {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border: 2px solid oklch(0.4 0 0);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.outcome-option:hover {
+  background-color: oklch(0.25 0 0);
+  border-color: oklch(0.55 0.15 265);
+}
+
+.outcome-option input[type="radio"] {
+  margin-right: 0.75rem;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.outcome-option input[type="radio"]:checked + .outcome-label {
+  color: oklch(0.95 0 0);
+  font-weight: 600;
+}
+
+.outcome-option input[type="radio"]:checked {
+  accent-color: oklch(0.6 0.2 265);
+}
+
+.outcome-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: oklch(0.8 0 0);
+  flex: 1;
+}
+
+.outcome-icon {
+  font-size: 1.25rem;
 }
 
 .confirm-actions {
@@ -1341,7 +1425,7 @@ const getFreshnessColor = (score) => {
 }
 
 /* Wide screens - hide toggle button and always show controls */
-@media (min-width: 1025px) {
+@media (min-width: 1770px) {
   .toggle-controls-button,
   .mobile-new-item {
     display: none;
@@ -1354,7 +1438,7 @@ const getFreshnessColor = (score) => {
   .controls-container {
     display: flex !important;
     flex-wrap: wrap;
-    gap: 2rem;
+    /* gap: 2rem; */
     align-items: center;
     margin-bottom: 1rem;
     padding: 0 1rem;
@@ -1371,7 +1455,7 @@ const getFreshnessColor = (score) => {
 }
 
 /* Narrow screens - hide desktop button, show mobile button */
-@media (max-width: 1024px) {
+@media (max-width: 1769px) {
   .desktop-new-item {
     display: none;
   }
@@ -1386,7 +1470,7 @@ const getFreshnessColor = (score) => {
 
   .controls-container {
     flex-wrap: wrap;
-    gap: 1rem;
+    /* gap: 1rem; */
   }
 
   .new-item-button {
@@ -1405,7 +1489,7 @@ const getFreshnessColor = (score) => {
   .controls-container {
     flex-direction: column;
     align-items: stretch;
-    gap: 0.75rem;
+    /* gap: 0.75rem; */
   }
 
   .filter-controls,
@@ -1414,6 +1498,11 @@ const getFreshnessColor = (score) => {
     flex-direction: column;
     align-items: stretch;
     gap: 0.5rem;
+  }
+
+  .filter-controls h2,
+  .sort-controls h2 {
+    width: 100%;
   }
 
   .sort-controls {

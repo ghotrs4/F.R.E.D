@@ -2,8 +2,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadFoodsFromCSV } from '../utils/csvParser'
-import Stats from './Stats.vue'
-import Recipes from './Recipes.vue'
+import { getSensorData } from '../utils/sensorApi'
+import { getWasteHistory } from '../utils/statsApi'
 
 const router = useRouter()
 
@@ -15,6 +15,22 @@ const count = ref(0)
 const showAlertsPopup = ref(false)
 const greeting = ref('Good Morning')
 const foods = ref([])
+const temperature = ref(4.0)
+const humidity = ref(50.0)
+const sensorConnected = ref(false)
+const wasteHistory = ref([])
+const recipes = ref([])
+const loadingRecipes = ref(false)
+
+const wasteReduced = computed(() => {
+  const last7Days = wasteHistory.value.slice(-7)
+  const totalConsumed = last7Days.reduce((sum, day) => sum + day.itemsConsumed, 0)
+  const totalWasted = last7Days.reduce((sum, day) => sum + day.itemsWasted, 0)
+  const total = totalConsumed + totalWasted
+  
+  if (total === 0) return 0
+  return Math.round((totalConsumed / total) * 100)
+})
 
 const getGreeting = () => {
   const hour = new Date().getHours()
@@ -46,9 +62,12 @@ const alerts = computed(() => {
     }
     
     if (food.daysUntilSpoilage <= 1) {
+      const message = food.daysUntilSpoilage === 0
+        ? `${food.name} will likely start to spoil in the next 24 hours!`
+        : `${food.name} will spoil in ${food.daysUntilSpoilage} day${food.daysUntilSpoilage !== 1 ? 's' : ''}!`
       alertList.push({
         type: 'critical',
-        message: `${food.name} will spoil in ${food.daysUntilSpoilage} day${food.daysUntilSpoilage !== 1 ? 's' : ''}!`,
+        message: message,
         food: food
       })
     } else if (food.daysUntilSpoilage === 2) {
@@ -79,6 +98,16 @@ const handleCardClick = (cardId) => {
   console.log(`Card ${cardId} clicked`)
 }
 
+const navigateToRecipes = () => {
+  router.push('/recipes')
+}
+
+const stripHtml = (html) => {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  return tmp.textContent || tmp.innerText || ''
+}
+
 const getFreshnessColor = (score) => {
   if (score <= 15) return '#8B0000' // Dark red
   if (score > 15 && score <= 39) return '#FF6B6B' // Light red
@@ -94,10 +123,6 @@ const navigateToInventory = () => {
 
 const navigateToStats = () => {
   router.push('/stats')
-}
-
-const navigateToRecipes = () => {
-  router.push('/recipes')
 }
 
 const openAlertsPopup = () => {
@@ -116,10 +141,37 @@ const handleKeyDown = (event) => {
 
 let greetingInterval
 let foodsUpdateInterval
+let sensorUpdateInterval
+let historyUpdateInterval
 
 onMounted(async () => {
   greeting.value = getGreeting()
   foods.value = await loadFoodsFromCSV()
+  
+  // Fetch initial sensor data
+  const sensorData = await getSensorData()
+  temperature.value = sensorData.temperature
+  humidity.value = sensorData.humidity
+  sensorConnected.value = sensorData.connected
+  
+  // Fetch initial history data
+  wasteHistory.value = await getWasteHistory()
+  
+  // Load recipes from localStorage (no API calls)
+  // Recipes are cached by the Recipes page
+  try {
+    const cachedRecipes = localStorage.getItem('cachedRecipes')
+    if (cachedRecipes) {
+      const allRecipes = JSON.parse(cachedRecipes)
+      recipes.value = allRecipes.slice(0, 2)
+    } else {
+      recipes.value = []
+    }
+  } catch (e) {
+    console.error('Error loading cached recipes:', e)
+    recipes.value = []
+  }
+  
   window.addEventListener('keydown', handleKeyDown)
   
   // Update greeting every minute
@@ -135,12 +187,27 @@ onMounted(async () => {
       foods.value = updatedFoods
     }
   }, 3000)
+  
+  // Poll for sensor data updates every 5 seconds
+  sensorUpdateInterval = setInterval(async () => {
+    const sensorData = await getSensorData()
+    temperature.value = sensorData.temperature
+    humidity.value = sensorData.humidity
+    sensorConnected.value = sensorData.connected
+  }, 5000)
+  
+  // Poll for history data updates every 30 seconds
+  historyUpdateInterval = setInterval(async () => {
+    wasteHistory.value = await getWasteHistory()
+  }, 30000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   clearInterval(greetingInterval)
   clearInterval(foodsUpdateInterval)
+  clearInterval(sensorUpdateInterval)
+  clearInterval(historyUpdateInterval)
 })
 </script>
 
@@ -148,7 +215,6 @@ onUnmounted(() => {
 <div class="content">
   <h1 class="welcome">{{ greeting }}</h1>
   <p class="subtitle">Your Fridge at a Glance</p>
-  <p>2&deg;C | 30% humidity</p>
   
   <div class="sections">
     <section class="section" @click="navigateToInventory">
@@ -174,12 +240,52 @@ onUnmounted(() => {
     
     <section class="section" @click="navigateToStats">
       <h2>Stats</h2>
-      <Stats />
+      <div class="sensor-readings">
+        <div class="reading-item">
+          <span class="reading-label">Sensor Status</span>
+          <span class="reading-value" :style="{ color: sensorConnected ? '#228B22' : '#8B0000' }">{{ sensorConnected ? 'Active' : 'Disconnected' }}</span>
+        </div>
+        <div class="reading-item">
+          <span class="reading-label">Temperature</span>
+          <span class="reading-value">{{ sensorConnected ? temperature.toFixed(1) + '°C' : '--' }}</span>
+        </div>
+        <div class="reading-item">
+          <span class="reading-label">Humidity</span>
+          <span class="reading-value">{{ sensorConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
+        </div>
+        <div class="reading-item">
+          <span class="reading-label">Waste Reduced</span>
+          <span class="reading-value">{{ wasteReduced }}%</span>
+        </div>
+      </div>
     </section>
     
-    <section class="section" @click="navigateToRecipes">
+    <section class="section recipes-section" @click="navigateToRecipes">
       <h2>Recipes</h2>
-      <Recipes />
+      <p class="section-subtitle">Top recipes from your recipe page</p>
+      <div v-if="loadingRecipes" class="loading-recipes">
+        Loading recipes...
+      </div>
+      <div v-else-if="recipes.length === 0" class="no-recipes">
+        No recipes available with current filters. Visit the Recipes page to adjust your filters or add ingredients to your inventory!
+      </div>
+      <div v-else class="recipes-grid-home">
+        <div v-for="recipe in recipes" :key="recipe.id" class="recipe-card-home">
+          <h3>{{ recipe.title }}</h3>
+          <div class="recipe-meta-home">
+            <span v-if="recipe.readyInMinutes">⏱️ {{ recipe.readyInMinutes }} min</span>
+            <span v-if="recipe.servings">🍽️ {{ recipe.servings }} servings</span>
+          </div>
+          <div class="ingredients-match-home">
+            <span class="used-ingredients">✓ {{ recipe.usedIngredientCount }} you have</span>
+            <span class="missed-ingredients">+ {{ recipe.missedIngredientCount }} needed</span>
+          </div>
+          <div v-if="recipe.summary" class="recipe-summary-home">
+            {{ stripHtml(recipe.summary).substring(0, 100) }}...
+          </div>
+        </div>
+      </div>
+      <div class="view-all-hint">Click to view all recipes →</div>
     </section>
   </div>
   
@@ -317,6 +423,33 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.sensor-readings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: oklch(0.15 0 0);
+  border-radius: 8px;
+}
+
+.reading-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.reading-label {
+  color: oklch(0.7 0 0);
+  font-size: 0.9rem;
+}
+
+.reading-value {
+  color: oklch(0.9 0 0);
+  font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .empty-inventory {
@@ -659,6 +792,96 @@ onUnmounted(() => {
 
   .see-all-button {
     padding: 0.75rem 1.25rem;
+  }
+}
+
+/* Recipes Section */
+.recipes-section {
+  /* Extends across multiple columns in the grid */
+  grid-column: 1 / -1;
+}
+
+.section-subtitle {
+  margin: -0.5rem 0 1rem 0;
+  color: oklch(0.6 0 0);
+  font-size: 0.95rem;
+}
+
+.loading-recipes,
+.no-recipes {
+  padding: 2rem;
+  color: oklch(0.6 0 0);
+  font-size: 1rem;
+}
+
+.recipes-grid-home {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.recipe-card-home {
+  background-color: oklch(0.15 0 0);
+  border: 1px solid oklch(0.35 0 0);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.2s ease;
+}
+
+.recipe-card-home:hover {
+  border-color: oklch(0.55 0.15 265);
+  background-color: oklch(0.18 0 0);
+}
+
+.recipe-card-home h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1rem;
+  color: oklch(0.85 0 0);
+  line-height: 1.3;
+}
+
+.recipe-meta-home {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: oklch(0.65 0 0);
+}
+
+.ingredients-match-home {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.used-ingredients {
+  color: oklch(0.7 0.15 160);
+}
+
+.missed-ingredients {
+  color: oklch(0.7 0.15 40);
+}
+
+.recipe-summary-home {
+  color: oklch(0.6 0 0);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  margin-top: 0.5rem;
+}
+
+.view-all-hint {
+  margin-top: 1rem;
+  color: oklch(0.55 0.15 265);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .recipes-grid-home {
+    grid-template-columns: 1fr;
   }
 }
 </style>

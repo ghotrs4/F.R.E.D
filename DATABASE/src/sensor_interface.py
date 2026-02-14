@@ -12,7 +12,7 @@ class SensorInterface:
     
     def __init__(self):
         """Initialize sensor interface"""
-        pass
+        self._is_connected = False  # Set to True when real hardware is connected
     
     def get_temperature(self) -> float:
         """
@@ -31,6 +31,15 @@ class SensorInterface:
             Relative humidity in % (default: 50.0)
         """
         return 50.0
+    
+    def is_connected(self) -> bool:
+        """
+        Check if physical sensors are connected.
+        
+        Returns:
+            True if real hardware sensors are connected, False if using defaults
+        """
+        return self._is_connected
 
 
 # Global sensor instance

@@ -13,8 +13,8 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar'
       <main>
         <RouterView />
       </main>
+      <div class="right-spacer"></div>
     </div>
-    <div class="right-spacer"></div>
   </SidebarProvider>
 </template>
 
@@ -34,6 +34,8 @@ import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar'
   display: flex;
   width: 100%;
   height: 100vh;
+  overflow: auto;
+  padding-bottom: 2rem;
 }
 
 .sidebar-trigger {
@@ -47,9 +49,8 @@ main {
   flex: 1;
   max-width: unset;
   margin: 0;
-  padding: 0;
+  padding: 0 0 2rem 0;
   text-align: left;
-  overflow: auto;
   height: 100%;
   width: 100%;
 }
