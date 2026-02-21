@@ -173,7 +173,8 @@ def predict_spoilage(
     cumulative_temp_abuse=0.0,
     expiration_date=None,
     food_name='',
-    storage_location='regular'
+    storage_location='regular',
+    gemini_shelf_life_days=None
 ):
     """
     Main spoilage prediction function.
@@ -217,6 +218,9 @@ def predict_spoilage(
     # Determine baseline shelf life
     if expiration_date:
         baseline_shelf_life = (expiration_date - purchase_date).total_seconds() / 86400
+    elif gemini_shelf_life_days:
+        # Use Gemini's item-specific estimate as baseline (more accurate than category defaults)
+        baseline_shelf_life = float(gemini_shelf_life_days)
     else:
         baseline_shelf_life = food['shelf_life_days']
     

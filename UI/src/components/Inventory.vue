@@ -3,9 +3,15 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { loadFoodsFromCSV, createFood, updateFood, deleteFood } from '../utils/csvParser'
 import { recordItemOutcome } from '../utils/statsApi'
 
-defineProps({
+const props = defineProps({
   msg: String,
+  pendingItems: {
+    type: Array,
+    default: () => []
+  }
 })
+
+const emit = defineEmits(['viewPendingItem'])
 
 const count = ref(0)
 const sortBy = ref(localStorage.getItem('inventorySortBy') || 'freshnessScore') // Restore from localStorage or default
@@ -53,8 +59,9 @@ const foodGroups = [
 // Available storage locations for filtering
 const storageLocations = [
   { value: 'all', label: 'All Storage' },
-  { value: 'regular', label: 'Regular' },
-  { value: 'humidity-controlled', label: 'Humidity-Controlled' },
+  { value: 'regular', label: 'Regular Shelf' },
+  { value: 'crisper', label: 'Crisper Drawer' },
+  { value: 'door', label: 'Door Shelf' },
 ]
 
 // Function to parse time in fridge string to days
@@ -72,7 +79,38 @@ const parseTimeInFridge = (timeString) => {
   return value
 }
 
-// Computed property for filtered and sorted cards
+// Computed property for pending items formatted as cards
+const pendingCards = computed(() => {
+  return props.pendingItems.map(item => {
+    const now = new Date()
+    const timeInFridge = item.time_in_fridge || '0 days'
+    
+    // Use stored spoilage prediction if available, otherwise calculate from expiration date
+    let daysUntilSpoilage = item.days_until_spoilage ?? 7
+    if (!item.days_until_spoilage && item.expiration_date) {
+      const expirationDate = new Date(item.expiration_date)
+      const diffDays = Math.ceil((expirationDate - now) / (1000 * 60 * 60 * 24))
+      daysUntilSpoilage = diffDays > 0 ? diffDays : 0
+    }
+    
+    return {
+      id: `pending-${item.id}`,
+      title: item.predicted_class,
+      name: item.predicted_class,
+      foodGroup: item.category || 'other',
+      packagingType: item.packaging_type || 'sealed',
+      storageLocation: item.storage_location || 'regular',
+      expirationDate: item.expiration_date || '',
+      confidence: item.confidence,
+      isPending: true,
+      freshnessScore: 100, // Default fresh score for pending items
+      daysUntilSpoilage: daysUntilSpoilage,
+      timeInFridge: timeInFridge
+    }
+  })
+})
+
+// Computed property for filtered and sorted cards (including pending)
 const sortedCards = computed(() => {
   let filteredCards = [...cards.value]
   
@@ -87,7 +125,7 @@ const sortedCards = computed(() => {
   }
   
   // Apply sorting
-  return filteredCards.sort((a, b) => {
+  const sorted = filteredCards.sort((a, b) => {
     let comparison = 0
     switch (sortBy.value) {
       case 'freshnessScore':
@@ -105,6 +143,9 @@ const sortedCards = computed(() => {
     // Apply sort direction
     return sortDirection.value === 'desc' ? -comparison : comparison
   })
+  
+  // Add pending items at the beginning
+  return [...pendingCards.value, ...sorted]
 })
 
 // Save sort and filter preferences to localStorage
@@ -174,6 +215,16 @@ const selectedCardAlerts = computed(() => {
 })
 
 const handleCardClick = (cardId) => {
+  // Check if it's a pending item
+  if (cardId.startsWith('pending-')) {
+    const pendingItem = props.pendingItems.find(item => `pending-${item.id}` === cardId)
+    if (pendingItem) {
+      emit('viewPendingItem', pendingItem)
+      return
+    }
+  }
+  
+  // Regular card click
   selectedCard.value = cards.value.find(card => card.id === cardId)
   showPopup.value = true
 }
@@ -243,7 +294,8 @@ const saveEdit = async () => {
     
     // Refresh the list
     const updatedFoods = await loadFoodsFromCSV()
-    cards.value = updatedFoods.map(food => ({
+    const confirmedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    cards.value = confirmedFoods.map(food => ({
       ...food,
       title: food.name
     }))
@@ -280,7 +332,8 @@ const confirmDelete = async () => {
     
     // Refresh the list
     const updatedFoods = await loadFoodsFromCSV()
-    cards.value = updatedFoods.map(food => ({
+    const confirmedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    cards.value = confirmedFoods.map(food => ({
       ...food,
       title: food.name
     }))
@@ -303,9 +356,16 @@ const handleAddFood = async () => {
       return
     }
 
+    // Capitalize food name for consistency
+    const capitalizeName = (name) => {
+      return name.split(' ').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ')
+    }
+
     // Create the food item via API
     await createFood({
-      name: newFood.value.name,
+      name: capitalizeName(newFood.value.name),
       foodGroup: newFood.value.foodGroup,
       packagingType: newFood.value.packagingType,
       storageLocation: newFood.value.storageLocation,
@@ -317,7 +377,8 @@ const handleAddFood = async () => {
     
     // Refresh the list
     const updatedFoods = await loadFoodsFromCSV()
-    cards.value = updatedFoods.map(food => ({
+    const confirmedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    cards.value = confirmedFoods.map(food => ({
       ...food,
       title: food.name
     }))
@@ -346,8 +407,10 @@ let cardsUpdateInterval
 
 onMounted(async () => {
   const foods = await loadFoodsFromCSV()
+  // Filter out pending items (they're shown via props.pendingItems)
+  const confirmedFoods = foods.filter(food => food.status !== 'pending')
   // Transform foods to cards format with title property
-  cards.value = foods.map(food => ({
+  cards.value = confirmedFoods.map(food => ({
     ...food,
     title: food.name
   }))
@@ -356,7 +419,9 @@ onMounted(async () => {
   // Poll for food data updates every 3 seconds
   cardsUpdateInterval = setInterval(async () => {
     const updatedFoods = await loadFoodsFromCSV()
-    const updatedCards = updatedFoods.map(food => ({
+    // Filter out pending items
+    const confirmedUpdatedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    const updatedCards = confirmedUpdatedFoods.map(food => ({
       ...food,
       title: food.name
     }))
@@ -453,12 +518,14 @@ const getFreshnessColor = (score) => {
         v-for="card in sortedCards" 
         :key="card.id"
         class="card-item"
-        :style="{ borderColor: getFreshnessColor(card.freshnessScore) }"
+        :class="{ 'pending-card': card.isPending }"
+        :style="{ borderColor: card.isPending ? 'oklch(0.55 0.2 45)' : getFreshnessColor(card.freshnessScore) }"
         @click="handleCardClick(card.id)"
       >
+        <div v-if="card.isPending" class="pending-badge">Pending</div>
         <div class="card-header">
           <h3>{{ card.title }}</h3>
-          <span class="freshness-score" :style="{ color: getFreshnessColor(card.freshnessScore) }">{{ Math.round(card.freshnessScore) }}</span>
+          <span v-if="!card.isPending" class="freshness-score" :style="{ color: getFreshnessColor(card.freshnessScore) }">{{ Math.round(card.freshnessScore) }}</span>
         </div>
         <p>Estimated days until spoilage: {{ card.daysUntilSpoilage }}</p>
         <p>Time in fridge: {{ card.timeInFridge }}</p>
@@ -511,20 +578,22 @@ const getFreshnessColor = (score) => {
             <span v-if="!isEditMode" class="detail-value">{{ selectedCard.packagingType ? selectedCard.packagingType.charAt(0).toUpperCase() + selectedCard.packagingType.slice(1) : 'Unknown' }}</span>
             <select v-else v-model="editedFood.packagingType" class="edit-select">
               <option value="sealed">Sealed</option>
-              <option value="air-tight container">Air-tight Container</option>
               <option value="opened">Opened</option>
               <option value="loose">Loose</option>
-              <option value="carton">Carton</option>
-              <option value="bottle">Bottle</option>
-              <option value="jar">Jar</option>
+              <option value="canned">Canned</option>
+              <option value="bottled">Bottled</option>
+              <option value="boxed">Boxed</option>
+              <option value="bagged">Bagged</option>
+              <option value="wrapped">Wrapped</option>
             </select>
           </div>
           <div class="detail-item">
             <span class="detail-label">Storage:</span>
-            <span v-if="!isEditMode" class="detail-value">{{ selectedCard.storageLocation === 'humidity-controlled' ? 'Humidity-Controlled' : 'Regular' }}</span>
+            <span v-if="!isEditMode" class="detail-value">{{ selectedCard.storageLocation === 'crisper' ? 'Crisper Drawer' : selectedCard.storageLocation === 'door' ? 'Door Shelf' : 'Regular Shelf' }}</span>
             <select v-else v-model="editedFood.storageLocation" class="edit-select">
-              <option value="regular">Regular</option>
-              <option value="humidity-controlled">Humidity-Controlled</option>
+              <option value="regular">Regular Shelf</option>
+              <option value="crisper">Crisper Drawer</option>
+              <option value="door">Door Shelf</option>
             </select>
           </div>
           <div class="detail-item">
@@ -627,20 +696,22 @@ const getFreshnessColor = (score) => {
               <label for="packagingType">Packaging Type</label>
               <select id="packagingType" v-model="newFood.packagingType">
                 <option value="sealed">Sealed</option>
-                <option value="air-tight container">Air-tight Container</option>
                 <option value="opened">Opened</option>
                 <option value="loose">Loose</option>
-                <option value="carton">Carton</option>
-                <option value="bottle">Bottle</option>
-                <option value="jar">Jar</option>
+                <option value="canned">Canned</option>
+                <option value="bottled">Bottled</option>
+                <option value="boxed">Boxed</option>
+                <option value="bagged">Bagged</option>
+                <option value="wrapped">Wrapped</option>
               </select>
             </div>
             
             <div class="form-group">
               <label for="storageLocation">Storage</label>
               <select id="storageLocation" v-model="newFood.storageLocation">
-                <option value="regular">Regular</option>
-                <option value="humidity-controlled">Humidity-Controlled</option>
+                <option value="regular">Regular Shelf</option>
+                <option value="crisper">Crisper Drawer</option>
+                <option value="door">Door Shelf</option>
               </select>
             </div>
             
@@ -765,6 +836,42 @@ const getFreshnessColor = (score) => {
   font-size: 0.875rem;
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+/* Pending Card Styles */
+.pending-card {
+  background: linear-gradient(135deg, oklch(0.3 0.1 45) 0%, oklch(0.25 0.05 45) 100%);
+  position: relative;
+  border-width: 2px;
+}
+
+.pending-card:hover {
+  background: linear-gradient(135deg, oklch(0.35 0.12 45) 0%, oklch(0.3 0.08 45) 100%);
+}
+
+.pending-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: oklch(0.55 0.2 45);
+  color: oklch(0.95 0 0);
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  z-index: 1;
+}
+
+.confidence-badge {
+  background: oklch(0.3 0 0);
+  color: oklch(0.7 0.2 145);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .controls-header {

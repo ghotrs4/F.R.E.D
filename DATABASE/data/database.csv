@@ -1,9 +1,12 @@
-item_id,food_name,food_category,entry_date,expiration_date,temp_at_entry,humidity_at_entry,packaging_type,storage_location,cumulative_temp_abuse,freshness_score,days_until_spoilage,safety_category
-ITEM_008,Nut Butter,Condiment,2026-01-05T10:05:27.309656,2027-02-02,4.5,85.0,air-tight container,regular,0.0,90.5,355,Fresh
-ITEM_018,Dijon Mustard,Condiment,2026-01-19T14:35:13.155571,2027-02-03,4.5,85.0,air-tight container,regular,0.0,93.9,356,Fresh
-ITEM_019,Soy Sauce,Condiment,2026-01-19T14:36:38.626090,2026-05-20,4.5,85.0,air-tight container,regular,0.0,80.8,97,Fresh
-ITEM_020,Lemon Juice,Beverage,2026-01-19T14:37:30.205763,2026-04-16,4.5,85.0,air-tight container,regular,0.0,73.3,63,Good
-ITEM_023,Apples,Produce,2026-02-09T16:26:52.582903,,4.5,85.0,loose,humidity-controlled,0.0,88.6,15,Fresh
-ITEM_027,Maple Syrup,Condiment,2026-02-10T16:28:48.063573,,4.5,85.0,bottle,regular,0.0,99.0,98,Fresh
-ITEM_028,Tahini,Condiment,2026-02-10T16:29:04.819185,,4.5,85.0,air-tight container,regular,0.0,98.9,89,Fresh
-ITEM_029,Cheddar Cheese,Dairy,2026-02-10T16:30:57.881584,,4.5,85.0,air-tight container,regular,0.0,92.9,13,Fresh
+item_id,food_name,food_category,entry_date,expiration_date,temp_at_entry,humidity_at_entry,packaging_type,storage_location,cumulative_temp_abuse,freshness_score,days_until_spoilage,safety_category,status,confidence,top5_predictions,gemini_shelf_life
+ITEM_008,Nut Butter,Condiment,2026-01-05T10:05:27.309656,2027-02-02,4.5,85.0,air-tight container,regular,0.0,88.0,345,Fresh,confirmed,,,
+ITEM_018,Dijon Mustard,Condiment,2026-01-19T14:35:13.155571,2027-02-03,4.5,85.0,air-tight container,regular,0.0,91.3,346,Fresh,confirmed,,,
+ITEM_019,Soy Sauce,Condiment,2026-01-19T14:36:38.626090,2026-05-20,4.5,85.0,air-tight container,regular,0.0,72.5,87,Good,confirmed,,,
+ITEM_020,Lemon Juice,Beverage,2026-01-19T14:37:30.205763,2026-04-16,4.5,85.0,air-tight container,regular,0.0,61.7,53,Good,confirmed,,,
+ITEM_023,Apples,Produce,2026-02-09T16:26:52.582903,,4.5,85.0,loose,humidity-controlled,0.0,31.2,5,Caution,confirmed,,,
+ITEM_027,Maple Syrup,Condiment,2026-02-10T16:28:48.063573,,4.5,85.0,bottle,regular,0.0,88.8,88,Fresh,confirmed,,,
+ITEM_028,Tahini,Condiment,2026-02-10T16:29:04.819185,,4.5,85.0,air-tight container,regular,0.0,87.7,79,Fresh,confirmed,,,
+ITEM_029,Shredded Parmesan Cheese,Dairy,2026-02-21T17:24:21.316860,,4.5,85.0,opened,regular,0.0,100.0,4,Fresh,pending,98.0,"[{""class"": ""shredded parmesan cheese"", ""confidence"": 98}, {""class"": ""grated cheese"", ""confidence"": 95}, {""class"": ""parmesan cheese"", ""confidence"": 92}, {""class"": ""cheese"", ""confidence"": 90}, {""class"": ""mozzarella cheese"", ""confidence"": 50}]",7
+ITEM_030,Peanut Butter,Other,2026-02-21T17:24:21.398467,2026-12-06,4.5,85.0,bottled,regular,0.0,0.0,0,Fresh,pending,99.0,"[{""class"": ""peanut butter"", ""confidence"": 99}, {""class"": ""crunchy peanut butter"", ""confidence"": 95}, {""class"": ""natural peanut butter"", ""confidence"": 92}, {""class"": ""almond butter"", ""confidence"": 40}, {""class"": ""cashew butter"", ""confidence"": 30}]",180
+ITEM_031,Oat Milk,Beverage,2026-02-21T17:24:21.650654,,4.5,85.0,boxed,regular,0.0,100.0,10,Fresh,pending,97.0,"[{""class"": ""oat milk"", ""confidence"": 97}, {""class"": ""plant-based milk"", ""confidence"": 95}, {""class"": ""almond milk"", ""confidence"": 70}, {""class"": ""soy milk"", ""confidence"": 60}, {""class"": ""milk alternative"", ""confidence"": 55}]",10
+ITEM_032,Eggs,Dairy,2026-02-21T17:24:21.739843,,4.5,85.0,boxed,regular,0.0,100.0,21,Fresh,pending,96.0,"[{""class"": ""eggs"", ""confidence"": 96}, {""class"": ""egg carton"", ""confidence"": 95}, {""class"": ""carton"", ""confidence"": 90}, {""class"": ""dozen eggs"", ""confidence"": 85}, {""class"": ""chicken eggs"", ""confidence"": 80}]",21

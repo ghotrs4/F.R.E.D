@@ -144,9 +144,17 @@ let foodsUpdateInterval
 let sensorUpdateInterval
 let historyUpdateInterval
 
+const handleFoodAdded = async () => {
+  // Refresh foods list when a new item is added via global scanner
+  foods.value = await loadFoodsFromCSV()
+}
+
 onMounted(async () => {
   greeting.value = getGreeting()
   foods.value = await loadFoodsFromCSV()
+  
+  // Listen for food-added event from global scanner
+  window.addEventListener('food-added', handleFoodAdded)
   
   // Fetch initial sensor data
   const sensorData = await getSensorData()
@@ -163,7 +171,7 @@ onMounted(async () => {
     const cachedRecipes = localStorage.getItem('cachedRecipes')
     if (cachedRecipes) {
       const allRecipes = JSON.parse(cachedRecipes)
-      recipes.value = allRecipes.slice(0, 2)
+      recipes.value = allRecipes.slice(0, 3)
     } else {
       recipes.value = []
     }
@@ -204,6 +212,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('food-added', handleFoodAdded)
   clearInterval(greetingInterval)
   clearInterval(foodsUpdateInterval)
   clearInterval(sensorUpdateInterval)
@@ -272,17 +281,6 @@ onUnmounted(() => {
       <div v-else class="recipes-grid-home">
         <div v-for="recipe in recipes" :key="recipe.id" class="recipe-card-home">
           <h3>{{ recipe.title }}</h3>
-          <div class="recipe-meta-home">
-            <span v-if="recipe.readyInMinutes">⏱️ {{ recipe.readyInMinutes }} min</span>
-            <span v-if="recipe.servings">🍽️ {{ recipe.servings }} servings</span>
-          </div>
-          <div class="ingredients-match-home">
-            <span class="used-ingredients">✓ {{ recipe.usedIngredientCount }} you have</span>
-            <span class="missed-ingredients">+ {{ recipe.missedIngredientCount }} needed</span>
-          </div>
-          <div v-if="recipe.summary" class="recipe-summary-home">
-            {{ stripHtml(recipe.summary).substring(0, 100) }}...
-          </div>
         </div>
       </div>
       <div class="view-all-hint">Click to view all recipes →</div>
@@ -780,6 +778,19 @@ onUnmounted(() => {
     width: 100%;
     padding: 0.75rem;
   }
+  
+  .header-row {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .header-content {
+    text-align: center;
+  }
+  
+  .scan-button {
+    width: 100%;
+  }
 }
 
 /* Improve touch targets for mobile */
@@ -815,9 +826,9 @@ onUnmounted(() => {
 }
 
 .recipes-grid-home {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   margin-top: 1rem;
 }
 
@@ -826,19 +837,16 @@ onUnmounted(() => {
   border: 1px solid oklch(0.35 0 0);
   border-radius: 8px;
   padding: 1rem;
-  transition: all 0.2s ease;
-}
-
-.recipe-card-home:hover {
-  border-color: oklch(0.55 0.15 265);
-  background-color: oklch(0.18 0 0);
+  overflow: hidden;
 }
 
 .recipe-card-home h3 {
-  margin: 0 0 0.75rem 0;
-  font-size: 1.1rem;
+  margin: 0;
+  font-size: 1rem;
   color: oklch(0.85 0 0);
   line-height: 1.3;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .recipe-meta-home {
@@ -880,8 +888,8 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .recipes-grid-home {
-    grid-template-columns: 1fr;
+  .recipe-card-home h3 {
+    font-size: 0.95rem;
   }
 }
 </style>

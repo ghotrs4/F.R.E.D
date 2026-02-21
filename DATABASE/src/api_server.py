@@ -3,10 +3,13 @@ from flask_cors import CORS
 import csv
 import os
 import requests
+import json
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from spoilage_algorithm import predict_spoilage
 from sensor_interface import get_sensor
+import google.genai as genai
+from PIL import Image
 
 # Load environment variables from .env file
 load_dotenv()
@@ -16,6 +19,10 @@ CORS(app)  # Enable CORS for frontend connection
 
 # Spoonacular API configuration
 SPOONACULAR_API_KEY = os.environ.get('SPOONACULAR_API_KEY')
+
+# Gemini API configuration
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # Path to the CSV database
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'database.csv')
@@ -55,6 +62,10 @@ def read_foods():
                 # Get cumulative temperature abuse
                 cumulative_temp_abuse = float(row['cumulative_temp_abuse']) if row['cumulative_temp_abuse'] else 0.0
                 
+                # Parse Gemini's original shelf life estimate (stored at scan time)
+                gemini_shelf_life_raw = row.get('gemini_shelf_life', '')
+                gemini_shelf_life = float(gemini_shelf_life_raw) if gemini_shelf_life_raw else None
+
                 # Calculate real-time spoilage prediction
                 prediction = predict_spoilage(
                     food_category=row['food_category'] if row['food_category'] else 'other',
@@ -65,7 +76,8 @@ def read_foods():
                     cumulative_temp_abuse=cumulative_temp_abuse,
                     expiration_date=expiration_date,
                     food_name=row['food_name'] if row['food_name'] else '',
-                    storage_location=row.get('storage_location', 'regular')
+                    storage_location=row.get('storage_location', 'regular'),
+                    gemini_shelf_life_days=gemini_shelf_life
                 )
                 
                 # Transform CSV data to match frontend format with real-time calculations
@@ -79,9 +91,12 @@ def read_foods():
                     'packagingType': row['packaging_type'] if row['packaging_type'] else '',
                     'expirationDate': row['expiration_date'] if row['expiration_date'] else '',
                     'storageLocation': row.get('storage_location', 'regular'),
+                    'status': row.get('status', 'confirmed'),
                     'cumulativeTempAbuse': cumulative_temp_abuse,
                     'safetyCategory': prediction['safety_category'],
-                    'warnings': prediction.get('warnings', [])
+                    'warnings': prediction.get('warnings', []),
+                    'confidence': float(row['confidence']) if row.get('confidence') else None,
+                    'top5Predictions': json.loads(row['top5_predictions']) if row.get('top5_predictions') else []
                 }
                 foods.append(food)
     except Exception as e:
@@ -150,7 +165,9 @@ def write_foods(foods):
         existing_data = {}
         with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
             reader = csv.DictReader(file)
-            fieldnames = reader.fieldnames
+            fieldnames = list(reader.fieldnames)
+            if 'gemini_shelf_life' not in fieldnames:
+                fieldnames.append('gemini_shelf_life')
             for row in reader:
                 existing_data[row['item_id']] = row
         
@@ -170,6 +187,12 @@ def write_foods(foods):
                     existing_data[item_id]['expiration_date'] = food['expirationDate']
                 if 'storageLocation' in food:
                     existing_data[item_id]['storage_location'] = food['storageLocation']
+                if 'status' in food:
+                    existing_data[item_id]['status'] = food['status']
+                if 'confidence' in food:
+                    existing_data[item_id]['confidence'] = str(food['confidence']) if food['confidence'] is not None else ''
+                if 'top5Predictions' in food:
+                    existing_data[item_id]['top5_predictions'] = json.dumps(food['top5Predictions']) if food['top5Predictions'] else ''
             else:
                 # Create new item
                 days_in_fridge = food.get('daysInFridge', 0)
@@ -184,10 +207,14 @@ def write_foods(foods):
                     'humidity_at_entry': '85.0',
                     'packaging_type': food.get('packagingType', 'sealed'),
                     'storage_location': food.get('storageLocation', 'regular'),
+                    'status': food.get('status', 'confirmed'),
                     'cumulative_temp_abuse': '0.0',
                     'freshness_score': str(food['freshnessScore']),
                     'days_until_spoilage': str(food['daysUntilSpoilage']),
-                    'safety_category': 'Fresh'
+                    'safety_category': 'Fresh',
+                    'confidence': str(food['confidence']) if food.get('confidence') is not None else '',
+                    'top5_predictions': json.dumps(food['top5Predictions']) if food.get('top5Predictions') else '',
+                    'gemini_shelf_life': str(food['daysUntilSpoilage'])
                 }
         
         # Write back to CSV
@@ -244,7 +271,10 @@ def create_food():
         'packagingType': data.get('packagingType', 'sealed'),
         'expirationDate': data.get('expirationDate', ''),
         'storageLocation': data.get('storageLocation', 'regular'),
-        'daysInFridge': data.get('daysInFridge', 0)
+        'status': data.get('status', 'confirmed'),
+        'daysInFridge': data.get('daysInFridge', 0),
+        'confidence': data.get('confidence'),
+        'top5Predictions': data.get('top5Predictions', [])
     }
     
     foods.append(new_food)
@@ -260,6 +290,8 @@ def update_food(item_id):
     
     for i, food in enumerate(foods):
         if food['id'] == item_id:
+            new_status = data.get('status', food.get('status', 'confirmed'))
+            becoming_confirmed = new_status == 'confirmed' and food.get('status') == 'pending'
             foods[i] = {
                 'id': item_id,
                 'name': data.get('name', food['name']),
@@ -269,7 +301,10 @@ def update_food(item_id):
                 'foodGroup': data.get('foodGroup', food['foodGroup']),
                 'packagingType': data.get('packagingType', food.get('packagingType', '')),
                 'expirationDate': data.get('expirationDate', food.get('expirationDate', '')),
-                'storageLocation': data.get('storageLocation', food.get('storageLocation', 'regular'))
+                'storageLocation': data.get('storageLocation', food.get('storageLocation', 'regular')),
+                'status': new_status,
+                'confidence': None if becoming_confirmed else food.get('confidence'),
+                'top5Predictions': [] if becoming_confirmed else food.get('top5Predictions', [])
             }
             if write_foods(foods):
                 return jsonify(foods[i])
@@ -297,6 +332,56 @@ def delete_food(item_id):
             writer.writerows(rows)
         
         return jsonify({'message': 'Food deleted successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/foods/pending', methods=['GET'])
+def get_pending_foods():
+    """Get all pending food items"""
+    all_foods = read_foods()
+    pending_foods = [food for food in all_foods if food.get('status') == 'pending']
+    return jsonify(pending_foods)
+
+@app.route('/api/foods/pending/confirm', methods=['POST'])
+def confirm_pending_foods():
+    """Confirm all pending items (change status to confirmed)"""
+    foods = read_foods()
+    updated_count = 0
+    
+    for food in foods:
+        if food.get('status') == 'pending':
+            food['status'] = 'confirmed'
+            food['confidence'] = None
+            food['top5Predictions'] = []
+            updated_count += 1
+    
+    if write_foods(foods):
+        return jsonify({'message': f'{updated_count} items confirmed', 'count': updated_count})
+    return jsonify({'error': 'Failed to confirm items'}), 500
+
+@app.route('/api/foods/pending/delete', methods=['DELETE'])
+def delete_pending_foods():
+    """Delete all pending items"""
+    try:
+        # Read all data
+        rows = []
+        deleted_count = 0
+        with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            fieldnames = reader.fieldnames
+            for row in reader:
+                if row.get('status') != 'pending':
+                    rows.append(row)
+                else:
+                    deleted_count += 1
+        
+        # Write back without pending items
+        with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        return jsonify({'message': f'{deleted_count} pending items deleted', 'count': deleted_count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -696,6 +781,199 @@ def search_recipes():
         recipe_cache['timestamp'] = datetime.now()
         recipe_cache['cache_key'] = cache_key
         return jsonify(error_result), 500
+
+@app.route('/api/classify-food/batch', methods=['POST'])
+def classify_food_batch():
+    """
+    Classify multiple food images in a single Gemini call.
+    Expects: image_0, image_1, ... image_N files in multipart form data
+    Returns: array of classification results, one per image
+    """
+    try:
+        if not gemini_client:
+            return jsonify({'error': 'Gemini API key not configured'}), 500
+
+        # Collect all uploaded image files (image_0, image_1, ...)
+        image_files = []
+        i = 0
+        while f'image_{i}' in request.files:
+            image_files.append(request.files[f'image_{i}'])
+            i += 1
+
+        if not image_files:
+            return jsonify({'error': 'No image files provided'}), 400
+
+        n = len(image_files)
+        temp_paths = []
+        pil_images = []
+
+        try:
+            # Save and open all images
+            for idx, f in enumerate(image_files):
+                temp_path = os.path.join(os.path.dirname(__file__), f'temp_upload_{idx}.jpg')
+                f.save(temp_path)
+                temp_paths.append(temp_path)
+                pil_images.append(Image.open(temp_path))
+
+            prompt = f"""
+I am sending you {n} food image(s), provided in order after this message.
+For EACH image, identify the food item and extract information.
+
+Return a JSON ARRAY with exactly {n} objects — one per image, in the same order.
+Each object must follow this exact format:
+{{
+    "predicted_class": "name of the food",
+    "confidence": confidence percentage (0-100),
+    "category": "one of: dairy, meat, produce, seafood, deli, beverage, other",
+    "packaging_type": "one of: sealed, opened, loose, canned, bottled, boxed, bagged, wrapped",
+    "storage_location": "one of: regular, crisper, door",
+    "expiration_date": "YYYY-MM-DD if visible on package, otherwise null",
+    "spoilage_prediction": "number of days until spoilage",
+    "notes": "any relevant observations about freshness, condition, or packaging",
+    "top5": [
+        {{"class": "most likely food", "confidence": percentage}},
+        {{"class": "second most likely", "confidence": percentage}},
+        {{"class": "third most likely", "confidence": percentage}},
+        {{"class": "fourth most likely", "confidence": percentage}},
+        {{"class": "fifth most likely", "confidence": percentage}}
+    ]
+}}
+
+Guidelines:
+- For category: Choose the most appropriate category for the primary food item
+- For packaging_type: Describe the current state (e.g., "sealed" for unopened, "opened" for partially used)
+- For storage_location: "crisper" for fruits/vegetables, "door" for condiments/drinks, "regular" for most items
+- For expiration_date: Only include if clearly visible and legible in the image
+- For spoilage_prediction: Based on the category, packaging, and storage location, how many days would this food last in the fridge in ideal conditions?
+- For notes: Mention any visible damage, freshness indicators, or important details
+- For predicted_class, use the same value as the first item in top5
+- If no food is detected in an image, set predicted_class to "No Food Detected" and set other fields to null
+
+Return ONLY the JSON array, no extra text.
+"""
+
+            # Build content list: prompt then all images
+            content = [prompt] + pil_images
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash-lite',
+                contents=content
+            )
+
+            result_text = response.text
+            if '```json' in result_text:
+                result_text = result_text.split('```json')[1].split('```')[0]
+            elif '```' in result_text:
+                result_text = result_text.split('```')[1].split('```')[0]
+
+            results = json.loads(result_text.strip())
+
+            # Ensure it's a list
+            if not isinstance(results, list):
+                results = [results]
+
+            return jsonify(results)
+
+        finally:
+            for img in pil_images:
+                img.close()
+            for path in temp_paths:
+                if os.path.exists(path):
+                    os.remove(path)
+
+    except Exception as e:
+        print(f"Batch classification error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/classify-food', methods=['POST'])
+def classify_food():
+    """
+    Classify a food image using Google Gemini API
+    Expects: image file in 'image' field
+    Returns: predicted class name, confidence, and top 5 predictions
+    """
+    try:
+        if not gemini_client:
+            return jsonify({'error': 'Gemini API key not configured'}), 500
+            
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image file provided'}), 400
+        
+        image_file = request.files['image']
+        
+        # Save temporarily
+        temp_path = os.path.join(os.path.dirname(__file__), 'temp_upload.jpg')
+        image_file.save(temp_path)
+        
+        image = None
+        try:
+            # Load image
+            image = Image.open(temp_path)
+            
+            # Use Gemini to identify the food
+            # gemini-2.5-flash-lite is fastest, but can use gemini-2.5-flash if tokens are depleted
+            prompt = """
+Analyze this image and identify the food item shown. Extract as much information as possible.
+
+Return your response in this exact JSON format:
+{
+    "predicted_class": "name of the food",
+    "confidence": confidence percentage (0-100),
+    "category": "one of: dairy, meat, produce, seafood, deli, beverage, other",
+    "packaging_type": "one of: sealed, opened, loose, canned, bottled, boxed, bagged, wrapped",
+    "storage_location": "one of: regular, crisper, door",
+    "expiration_date": "YYYY-MM-DD if visible on package, otherwise null",
+    "spoilage_prediction": "number of days until spoilage",
+    "notes": "any relevant observations about freshness, condition, or packaging",
+    "top5": [
+        {"class": "most likely food", "confidence": percentage},
+        {"class": "second most likely", "confidence": percentage},
+        {"class": "third most likely", "confidence": percentage},
+        {"class": "fourth most likely", "confidence": percentage},
+        {"class": "fifth most likely", "confidence": percentage}
+    ]
+}
+
+Guidelines:
+- For category: Choose the most appropriate category for the primary food item
+- For packaging_type: Describe the current state (e.g., "sealed" for unopened, "opened" for partially used)
+- For storage_location: "crisper" for fruits/vegetables, "door" for condiments/drinks, "regular" for most items
+- For expiration_date: Only include if clearly visible and legible in the image
+- For spoilage_prediction: Based on the category, packaging, and storage location, how many days would this food last in the fridge in ideal conditions?
+- For notes: Mention any visible damage, freshness indicators, or important details
+- If unsure about any field, provide your best guess with appropriate confidence level
+- For predicted_class, use the same value as the first item in top5
+- If no food is detected, fill out the fields with 'No Food Detected' for food name and null for the rest
+"""
+            
+            response = gemini_client.models.generate_content(
+                model='gemini-3-flash',
+                contents=[prompt, image]
+            )
+            
+            # Parse the response
+            result_text = response.text
+            
+            # Extract JSON from response (Gemini might wrap it in markdown)
+            if '```json' in result_text:
+                result_text = result_text.split('```json')[1].split('```')[0]
+            elif '```' in result_text:
+                result_text = result_text.split('```')[1].split('```')[0]
+            
+            result = json.loads(result_text.strip())
+            
+            return jsonify(result)
+            
+        finally:
+            # Always clean up, even if there's an error
+            if image is not None:
+                image.close()
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+    except Exception as e:
+        print(f"Classification error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
