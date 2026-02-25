@@ -38,9 +38,7 @@ int readADC(void){
 }
 
 void setMultiplexer(short channel){
-    digitalWrite(ANALOG_MULTIPLEXER_S0, (channel >> 0) & 1);
-    digitalWrite(ANALOG_MULTIPLEXER_S1, (channel >> 1) & 1);
-    digitalWrite(ANALOG_MULTIPLEXER_S2, (channel >> 2) & 1);
+
 }
 
 uint8_t i = 0;
@@ -48,14 +46,6 @@ uint8_t i = 0;
 void setup() {
   // initialize serial communication at 115200 bits per second:
   Serial.begin(115200);
-
-  // configure mux select pins as outputs
-  pinMode(ANALOG_MULTIPLEXER_S0, OUTPUT);
-  pinMode(ANALOG_MULTIPLEXER_S1, OUTPUT);
-  pinMode(ANALOG_MULTIPLEXER_S2, OUTPUT);
-
-  // configure ADC input pin for mux signal output
-  pinMode(ADC_IN, INPUT);
   
   //set the resolution to 12 bits (0-4096)
   analogReadResolution(12);
