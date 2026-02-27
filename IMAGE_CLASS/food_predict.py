@@ -21,7 +21,10 @@ TEST_SINGLE_IMAGE = True  # Testing on full dataset to see real accuracy
 
 # If testing single image, specify the path here:
 #SINGLE_IMAGE_PATH = "./data/food-101/images/apple_pie/1005649.jpg"  # Change to your image path
-SINGLE_IMAGE_PATH = "./data/churro.jpg"
+#SINGLE_IMAGE_PATH = "./data/churro.jpg"
+#SINGLE_IMAGE_PATH = "./data/Homemade-Sandwich-Bread-0008.jpg"  # Example image (bread)
+
+SINGLE_IMAGE_PATH = "./data/milk-bread.webp"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -42,36 +45,64 @@ transform = transforms.Compose([
 # -------------------------------------------------------------
 print("\nLoading trained model...")
 
-# Create the same model architecture
-model = models.resnet18(weights=None)  # Don't load pretrained weights
-model.fc = nn.Linear(model.fc.in_features, 101)  # 101 Food-101 classes
-model = model.to(device)
-
 # Load the trained weights
-model_path = "50EPOCH.pth"
-if os.path.exists(model_path):
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    print(f"✓ Model loaded from {model_path}")
-else:
+#model_path = "50EPOCH.pth"
+
+model_path = "food_classifier_20260226_204634.pth" #name of custom trained model
+
+if not os.path.exists(model_path):
     print(f"✗ Error: Model file '{model_path}' not found!")
     exit(1)
+
+# Load checkpoint
+checkpoint = torch.load(model_path, map_location=device)
+
+# Extract metadata and model state
+if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+    # New format with metadata
+    num_classes = checkpoint.get('num_classes', 101)
+    saved_class_names = checkpoint.get('class_names', None)
+    model_state = checkpoint['model_state_dict']
+    print(f"✓ Model checkpoint loaded with {num_classes} classes")
+else:
+    # Old format (just state dict)
+    num_classes = 101
+    saved_class_names = None
+    model_state = checkpoint
+    print(f"✓ Model loaded (old format, assuming 101 classes)")
+
+# Create model architecture with correct number of classes
+model = models.resnet18(weights=None)  # Don't load pretrained weights
+model.fc = nn.Linear(model.fc.in_features, num_classes)
+model = model.to(device)
+
+# Load the weights
+model.load_state_dict(model_state)
+print(f"✓ Model weights loaded successfully")
 
 model.eval()  # Set to evaluation mode
 
 # -------------------------------------------------------------
 # 3. LOAD TEST DATASET (for class names)
 # -------------------------------------------------------------
-print("\nLoading Food-101 dataset for class names...")
-test_data = Food101(
-    root="./data",
-    split="test",
-    transform=transform,
-    download=False  # Assuming already downloaded
-)
+if saved_class_names:
+    # Use class names from saved model (includes custom classes)
+    class_names = saved_class_names
+    print(f"\n✓ Using {len(class_names)} class names from saved model")
+    print(f"  - Includes Food-101 and custom classes")
+else:
+    # Fallback to Food-101 only
+    print("\nLoading Food-101 dataset for class names...")
+    test_data = Food101(
+        root="./data",
+        split="test",
+        transform=transform,
+        download=False  # Assuming already downloaded
+    )
 
-# Get class names
-class_names = test_data.classes
-print(f"✓ Dataset has {len(class_names)} classes")
+    # Get class names
+    class_names = test_data.classes
+    print(f"✓ Dataset has {len(class_names)} classes")
 
 # -------------------------------------------------------------
 # 4. RUN PREDICTIONS BASED ON MODE
