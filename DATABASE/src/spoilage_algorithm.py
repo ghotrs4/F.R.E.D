@@ -8,6 +8,7 @@ import math
 
 
 # Food database with spoilage parameters based on USDA guidelines
+# Backup intial spoilage prediction if AI prediction fails
 FOOD_DATABASE = {
     # DAIRY
     'dairy': {
@@ -16,6 +17,9 @@ FOOD_DATABASE = {
         'optimal_temp': 4.0,
         'temp_sensitivity': 1.8,
         'temp_abuse_threshold': 12.0,
+        'optimal_humidity': 50,
+        'humidity_sensitivity': 0.8,
+        'optimal_packaging': 'sealed',
     },
     
     # MEAT
@@ -25,6 +29,9 @@ FOOD_DATABASE = {
         'optimal_temp': 2.0,
         'temp_sensitivity': 2.8,
         'temp_abuse_threshold': 3.0,
+        'optimal_humidity': 40,
+        'humidity_sensitivity': 1.4,
+        'optimal_packaging': 'sealed',
     },
     
     # PRODUCE
@@ -34,15 +41,9 @@ FOOD_DATABASE = {
         'optimal_temp': 4.0,
         'temp_sensitivity': 1.5,
         'temp_abuse_threshold': 12.0,
-    },
-    
-    # APPLES (whole apples last 4-6 weeks)
-    'apple': {
-        'name': 'Apple',
-        'shelf_life_days': 35,
-        'optimal_temp': 4.0,
-        'temp_sensitivity': 1.2,
-        'temp_abuse_threshold': 24.0,
+        'optimal_humidity': 85,
+        'humidity_sensitivity': 1.8,
+        'optimal_packaging': 'loose',
     },
     
     # BEVERAGE
@@ -52,8 +53,23 @@ FOOD_DATABASE = {
         'optimal_temp': 4.0,
         'temp_sensitivity': 1.3,
         'temp_abuse_threshold': 24.0,
+        'optimal_humidity': 50,
+        'humidity_sensitivity': 0.4,
+        'optimal_packaging': 'sealed',
     },
     
+    # SEAFOOD
+    'seafood': {
+        'name': 'Seafood',
+        'shelf_life_days': 2,
+        'optimal_temp': 1.0,
+        'temp_sensitivity': 3.0,
+        'temp_abuse_threshold': 2.0,
+        'optimal_humidity': 50,
+        'humidity_sensitivity': 1.6,
+        'optimal_packaging': 'sealed',
+    },
+
     # CONDIMENT
     'condiment': {
         'name': 'Condiment',
@@ -61,6 +77,9 @@ FOOD_DATABASE = {
         'optimal_temp': 4.0,
         'temp_sensitivity': 0.8,
         'temp_abuse_threshold': 72.0,
+        'optimal_humidity': 50,
+        'humidity_sensitivity': 0.3,
+        'optimal_packaging': 'sealed',
     },
     
     # PREPARED/LEFTOVERS
@@ -70,6 +89,9 @@ FOOD_DATABASE = {
         'optimal_temp': 4.0,
         'temp_sensitivity': 2.5,
         'temp_abuse_threshold': 4.0,
+        'optimal_humidity': 45,
+        'humidity_sensitivity': 1.0,
+        'optimal_packaging': 'sealed',
     },
     
     # DEFAULT
@@ -79,6 +101,9 @@ FOOD_DATABASE = {
         'optimal_temp': 4.0,
         'temp_sensitivity': 1.5,
         'temp_abuse_threshold': 12.0,
+        'optimal_humidity': 50,
+        'humidity_sensitivity': 0.8,
+        'optimal_packaging': 'sealed',
     },
 }
 
@@ -95,11 +120,32 @@ def calculate_temperature_factor(current_temp, optimal_temp, sensitivity):
         return min(1.2, 1.0 + abs(delta_T) * 0.02)
     else:
         # Above optimal - accelerated spoilage
+        # Convert Celcius to Kelvin
         T_current = current_temp + 273.15
         T_optimal = optimal_temp + 273.15
         Ea_R = 3000 * sensitivity
         arrhenius = math.exp(-Ea_R * (1/T_current - 1/T_optimal))
         return max(0.1, 1.0 / arrhenius)
+
+
+def calculate_humidity_factor(current_humidity, optimal_humidity, sensitivity):
+    """
+    Calculate spoilage rate modifier based on humidity deviation from optimal.
+    Returns a factor that multiplies shelf life (< 1 = faster spoilage).
+    - Above optimal: promotes mould/bacterial growth (more severe)
+    - Below optimal: causes desiccation/drying (less severe, except for produce)
+    """
+    delta_H = current_humidity - optimal_humidity
+
+    if abs(delta_H) < 5:
+        # Within 5% of optimal - negligible effect
+        return 1.0
+    elif delta_H > 0:
+        # Above optimal - excess moisture accelerates spoilage
+        return max(0.5, 1.0 - sensitivity * (delta_H / 100) ** 1.2)
+    else:
+        # Below optimal - drying effect (less damaging than excess moisture)
+        return max(0.7, 1.0 + sensitivity * 0.4 * (delta_H / 100))
 
 
 def calculate_temp_abuse_factor(cumulative_hours, threshold_hours):
@@ -116,28 +162,32 @@ def calculate_temp_abuse_factor(cumulative_hours, threshold_hours):
         return max(0.2, 0.9 * math.exp(-excess / threshold_hours))
 
 
-def calculate_packaging_factor(packaging_type, food_category='other'):
+def calculate_packaging_factor(packaging_type, optimal_packaging):
     """
     Get packaging protection factor.
     For produce, loose packaging is beneficial (better air circulation).
     For other foods, loose packaging accelerates spoilage.
+    sealed, opened, loose, canned, bottled, boxed, bagged, wrapped
     """
+
+    # Return 1.0 factor if packaging is optimal for the type of food
+    if packaging_type == optimal_packaging:
+        return 1.0
+
+    # backup values if packaging is not optimal
     factors = {
-        'sealed': 1.2,
-        'air-tight container': 1.0,
+        'sealed': 1.0,
         'opened': 0.7,
-        'loose': 0.5,  # Default for non-produce
-        'carton': 1.0,
-        'bottle': 1.1,
-        'jar': 1.0,
+        'loose': 0.5,
+        'canned': 1.0,
+        'bottled': 1.0,
+        'boxed': 1.0,
+        'bagged': 0.7,
+        'wrapped': 0.7
     }
     
     pkg_type = packaging_type.lower() if packaging_type else 'sealed'
     base_factor = factors.get(pkg_type, 1.0)
-    
-    # Special handling for produce with loose packaging
-    if pkg_type == 'loose' and food_category == 'produce':
-        return 1.1  # Loose produce benefits from air circulation
     
     return base_factor
 
@@ -156,9 +206,9 @@ def categorize_safety(freshness_score, days_remaining):
     """Determine safety category"""
     if freshness_score >= 75 and days_remaining > 3:
         return 'Fresh'
-    elif freshness_score >= 50 and days_remaining > 1:
+    elif freshness_score >= 25 and days_remaining > 1:
         return 'Good'
-    elif freshness_score >= 25:
+    elif freshness_score >= 0:
         return 'Caution'
     else:
         return 'Spoiled'
@@ -174,7 +224,8 @@ def predict_spoilage(
     expiration_date=None,
     food_name='',
     storage_location='regular',
-    gemini_shelf_life_days=None
+    gemini_shelf_life_days=None,
+    gemini_params=None
 ):
     """
     Main spoilage prediction function.
@@ -198,56 +249,58 @@ def predict_spoilage(
             - warnings: list of warning messages
     """
     
-    # Check if food name matches a specific item in database
-    food_name_lower = food_name.lower() if food_name else ''
-    if 'apple' in food_name_lower and 'apple' in FOOD_DATABASE:
-        food_category = 'apple'
-    else:
-        # Normalize category to lowercase
-        food_category = food_category.lower() if food_category else 'other'
+    food_category = food_category.lower() if food_category else 'other'
     
     # Get food parameters
     if food_category not in FOOD_DATABASE:
         food_category = 'other'
     
     food = FOOD_DATABASE[food_category]
-    
-    # Calculate days since purchase
+
+    # Override category defaults with Gemini's item-specific parameters where provided
+    if gemini_params:
+        overridable = ['optimal_temp', 'temp_sensitivity', 'temp_abuse_threshold',
+                       'optimal_humidity', 'humidity_sensitivity', 'optimal_packaging']
+        food = {**food, **{k: gemini_params[k] for k in overridable if k in gemini_params and gemini_params[k] is not None}}
     days_since_purchase = (datetime.now() - purchase_date).total_seconds() / 86400
     
-    # Determine baseline shelf life
+    # Determine baseline shelf life — priority: expiration date > gemini_params > gemini_shelf_life_days > category default
     if expiration_date:
         baseline_shelf_life = (expiration_date - purchase_date).total_seconds() / 86400
+    elif gemini_params and gemini_params.get('shelf_life_days'):
+        baseline_shelf_life = float(gemini_params['shelf_life_days'])
     elif gemini_shelf_life_days:
-        # Use Gemini's item-specific estimate as baseline (more accurate than category defaults)
+        # Backward compat for items saved before gemini_params was added
         baseline_shelf_life = float(gemini_shelf_life_days)
     else:
         baseline_shelf_life = food['shelf_life_days']
     
     # Calculate environmental factors
     temp_factor = calculate_temperature_factor(
-        current_temp, 
+        current_temp,
         food['optimal_temp'],
         food['temp_sensitivity']
     )
-    
+
+    humidity_factor = calculate_humidity_factor(
+        current_humidity,
+        food['optimal_humidity'],
+        food['humidity_sensitivity']
+    )
+
     abuse_factor = calculate_temp_abuse_factor(
         cumulative_temp_abuse,
         food['temp_abuse_threshold']
     )
-    
-    packaging_factor = calculate_packaging_factor(packaging_type, food_category)
-    
+
+    packaging_factor = calculate_packaging_factor(packaging_type, food['optimal_packaging'])
+
     # Calculate effective shelf life
-    effective_shelf_life = baseline_shelf_life * temp_factor * abuse_factor * packaging_factor
+    effective_shelf_life = baseline_shelf_life * temp_factor * humidity_factor * abuse_factor * packaging_factor
     
     # Special case: produce in humidity-controlled storage lasts longer
     if food_category == 'produce' and storage_location.lower() == 'humidity-controlled':
         effective_shelf_life *= 1.3
-    
-    # Special case: opened condiments with expiration dates spoil faster
-    if food_category == 'condiment' and packaging_type.lower() == 'opened' and expiration_date:
-        effective_shelf_life *= 0.5
     
     # Calculate outputs
     freshness_score = calculate_freshness_score(days_since_purchase, effective_shelf_life)
@@ -274,6 +327,7 @@ def predict_spoilage(
             'days_since_purchase': round(days_since_purchase, 1),
             'effective_shelf_life': round(effective_shelf_life, 1),
             'temp_factor': round(temp_factor, 3),
+            'humidity_factor': round(humidity_factor, 3),
             'abuse_factor': round(abuse_factor, 3),
             'packaging_factor': round(packaging_factor, 3)
         }
