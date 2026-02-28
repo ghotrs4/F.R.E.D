@@ -3,9 +3,10 @@
 #include <Adafruit_BME280.h>
 #include <Wire.h>
 #include "BluetoothSerial.h"
+#include <stdlib.h>
 
 #define ANALOG_MULTIPLEXER_S0  (uint8_t)32
-#define ANALOG_MULTIPLEXER_S1  (uint8_t)35
+#define ANALOG_MULTIPLEXER_S1  (uint8_t)25
 #define ANALOG_MULTIPLEXER_S2  (uint8_t)33
 #define ADC_IN                 (uint8_t)36
 #define DAC_OUT                (uint8_t)25
@@ -85,8 +86,8 @@ void loop(void) {
   // Task 1:poll each channel of the analog mux, plot via SERIAL_CONNECTION logger
   for(int channel=0;channel<8;channel++){
     setMultiplexer(channel);
-    //emperically determined delay, a suitable time to allow ADC to settle
-    delay(50); 
+    //emperically determined delay, a suitable time to allow ADC, mux to settle
+    delay(25); 
     uint16_t getSensorValue = readADC();
 
     if(SERIAL_CONNECTION.hasClient()){
@@ -137,7 +138,8 @@ void initSerial(void){
   while(!SERIAL_CONNECTION.hasClient()){
     LED_indicator_generic();
     delay(100);
-  }    
+  }
+  SERIAL_CONNECTION.println("SERIAL_CONNECTION started. Firmware 0.1 for Prototype REV1");    
 #endif
 }
 
@@ -148,10 +150,12 @@ void initI2CBME(void){
   // default settings
   status = bme.begin(0x76, &I2Cone);  
   if (!status) {
-    SERIAL_CONNECTION.printf("Error establishing BME280 I2C, halting.");
+    SERIAL_CONNECTION.println("Error establishing BME280 I2C, halting.");
     for(;;){};
   }
-  SERIAL_CONNECTION.printf("BME280 connection established, got device ID: 0x%x\n", bme.sensorID());
+  SERIAL_CONNECTION.print("BME280 connection established, expected ID 0x60. Got device ID: 0x");
+  SERIAL_CONNECTION.printf("%x", bme.sensorID());
+  SERIAL_CONNECTION.println("");
 }
 
 void printBMEValues(void) {
