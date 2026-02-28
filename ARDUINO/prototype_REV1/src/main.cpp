@@ -35,7 +35,8 @@ const uint8_t sensorMapping[8] = {
   5,
   8,
   9,
-  135
+  135,
+  255, // reference voltage
 };
 
 //I2C Glboals
@@ -45,7 +46,9 @@ TwoWire I2Cone = TwoWire(0);
 //Function Prototypes
 uint16_t readADC(void);
 void setMultiplexer(short channel);
-void LED_indicator_task(void);
+void LED_indicator_generic(void);
+void LED_indicator_error(void);
+void LED_indicator_ok(void);
 void initI2CBME(void);
 void printBMEValues(void);
 void initSerial(void);
@@ -54,7 +57,7 @@ void setup(void) {
   //init status LEDs
   pinMode(STATUS_LED, OUTPUT);
   pinMode(ONBOARD_LED, OUTPUT);
-  LED_indicator_task(); // flash LEDs to indicate setup has begun
+  LED_indicator_generic(); // flash LEDs to indicate setup has begun
 
   //init SERIAL_CONNECTION
   initSerial();
@@ -81,14 +84,19 @@ void loop(void) {
   
   // Task 1:poll each channel of the analog mux, plot via SERIAL_CONNECTION logger
   for(int channel=0;channel<8;channel++){
-    LED_indicator_task();
     setMultiplexer(channel);
     //emperically determined delay, a suitable time to allow ADC to settle
     delay(50); 
     uint16_t getSensorValue = readADC();
 
-    if(SERIAL_CONNECTION.available()){
-      SERIAL_CONNECTION.printf(">MQ%d:%d\n",sensorMapping[channel],getSensorValue);
+    if(SERIAL_CONNECTION.hasClient()){
+      LED_indicator_ok();
+      SERIAL_CONNECTION.printf(">MQ%d:",sensorMapping[channel]);
+      SERIAL_CONNECTION.printf("%d",getSensorValue);
+      SERIAL_CONNECTION.println("");
+    }
+    else{
+      LED_indicator_error();
     }
   }
   //Task 2: Get temp, humidity from BME280
@@ -96,13 +104,27 @@ void loop(void) {
   delay(50);  
 }
 
-void LED_indicator_task(void){
+//generic blink when pairing client bluetooth
+void LED_indicator_generic(void){ 
   digitalWrite(STATUS_LED, 0);
   digitalWrite(ONBOARD_LED, 0);
   delay(100);
   digitalWrite(STATUS_LED, 1);
   digitalWrite(ONBOARD_LED, 1);
 }
+
+void LED_indicator_error(void){ 
+  digitalWrite(STATUS_LED, 1);
+  digitalWrite(ONBOARD_LED, 0);
+  delay(100);
+}
+
+void LED_indicator_ok(void){ 
+  digitalWrite(STATUS_LED, 0);
+  digitalWrite(ONBOARD_LED, 1);
+  delay(100);
+}
+
 
 void initSerial(void){
 #if 0 == BT_ENABLE
@@ -113,7 +135,7 @@ void initSerial(void){
   SERIAL_CONNECTION.begin("ESP32SensorBoard");
 // gate until SERIAL_CONNECTION is up
   while(!SERIAL_CONNECTION.hasClient()){
-    LED_indicator_task();
+    LED_indicator_generic();
     delay(100);
   }    
 #endif
@@ -129,11 +151,12 @@ void initI2CBME(void){
     SERIAL_CONNECTION.printf("Error establishing BME280 I2C, halting.");
     for(;;){};
   }
-  SERIAL_CONNECTION.printf("BME280 connection established, got device ID: %d\n", bme.sensorID());
+  SERIAL_CONNECTION.printf("BME280 connection established, got device ID: 0x%x\n", bme.sensorID());
 }
 
 void printBMEValues(void) {
-  if(!SERIAL_CONNECTION.available()){
+  if(SERIAL_CONNECTION.hasClient()){
+    LED_indicator_ok();
     SERIAL_CONNECTION.print(">Temperature:");
     SERIAL_CONNECTION.print(bme.readTemperature());
     SERIAL_CONNECTION.println(" °C");
@@ -152,6 +175,9 @@ void printBMEValues(void) {
     SERIAL_CONNECTION.println(" %");
 
     SERIAL_CONNECTION.println();
+  }
+  else{
+    LED_indicator_error();
   }
 }
 
