@@ -1,0 +1,62 @@
+{
+  "chicken curry with quinoa|prepared|loose": {
+    "food_name": "chicken curry with quinoa",
+    "shelf_life_days": 3,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 2.5,
+    "temp_abuse_threshold": 2.0,
+    "optimal_humidity": 90,
+    "humidity_sensitivity": 1.0,
+    "optimal_packaging": "sealed"
+  },
+  "lemon juice|produce|bottled": {
+    "food_name": "lemon juice",
+    "shelf_life_days": 180,
+    "optimal_temp": 2.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 10.0,
+    "optimal_humidity": 70,
+    "humidity_sensitivity": 0.5,
+    "optimal_packaging": "bottled"
+  },
+  "chickpeas|produce|canned": {
+    "food_name": "chickpeas",
+    "shelf_life_days": 4,
+    "optimal_temp": 2.0,
+    "temp_sensitivity": 2.5,
+    "temp_abuse_threshold": 2.0,
+    "optimal_humidity": 70,
+    "humidity_sensitivity": 0.5,
+    "optimal_packaging": "sealed"
+  },
+  "canned chickpeas|other|canned": {
+    "food_name": "canned chickpeas",
+    "shelf_life_days": 3,
+    "optimal_temp": 2.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 2.0,
+    "optimal_humidity": 85,
+    "humidity_sensitivity": 0.8,
+    "optimal_packaging": "sealed"
+  },
+  "apple slices with peanut butter|prepared|opened": {
+    "food_name": "apple slices with peanut butter",
+    "shelf_life_days": 3,
+    "optimal_temp": 1.0,
+    "temp_sensitivity": 2.0,
+    "temp_abuse_threshold": 2.0,
+    "optimal_humidity": 90,
+    "humidity_sensitivity": 1.2,
+    "optimal_packaging": "sealed"
+  },
+  "chickpeas|other|canned": {
+    "food_name": "chickpeas (category: other, packaging: canned)",
+    "shelf_life_days": 4,
+    "optimal_temp": 4.0,
+    "temp_abuse_threshold": 2.0,
+    "temp_sensitivity": 2.0,
+    "optimal_humidity": 70,
+    "humidity_sensitivity": 0.8,
+    "optimal_packaging": "sealed"
+  }
+}

@@ -4,8 +4,7 @@
 
 <script setup>
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
-import * as tf from '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd'
+import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const emit = defineEmits(['close', 'finish'])
 
@@ -26,6 +25,19 @@ const statusMessage = ref('')
 const isBatchProcessing = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
 const captureCooldown = ref(false)
+const debugCanvasRef = ref(null)
+const showDebugOverlay = ref(false)
+
+const toggleDebugOverlay = () => {
+  showDebugOverlay.value = !showDebugOverlay.value
+  // Clear canvas immediately when turning off
+  if (!showDebugOverlay.value) {
+    const debugCanvas = debugCanvasRef.value
+    if (debugCanvas) {
+      debugCanvas.getContext('2d').clearRect(0, 0, debugCanvas.width, debugCanvas.height)
+    }
+  }
+}
 
 const startCamera = async () => {
   try {
@@ -135,7 +147,7 @@ const finishScanning = async () => {
     if (response.ok) {
       const classifications = await response.json()
       const items = Array.isArray(classifications) ? classifications : []
-      for (const result of items) {
+      items.forEach((result, index) => {
         if (
           result.predicted_class &&
           result.predicted_class.toLowerCase() !== 'no food detected' &&
@@ -144,17 +156,20 @@ const finishScanning = async () => {
           results.push({
             id: Date.now() + results.length,
             timestamp: new Date().toLocaleTimeString(),
-            ...result
+            ...result,
+            imageBlob: capturedBlobs.value[index] ?? null
           })
         }
-      }
+      })
     }
-    
+
     batchProgress.value = { current: capturedBlobs.value.length, total: capturedBlobs.value.length }
     emit('finish', results)
   } catch (err) {
     console.error('Batch classification error:', err)
     emit('finish', [])
+  } finally {
+    isBatchProcessing.value = false
   }
 }
 
@@ -166,13 +181,24 @@ const startDetection = () => {
   
   console.log('Starting detection...')
   
-  detectionInterval.value = setInterval(async () => {
+  detectionInterval.value = setInterval(() => {
     if (!videoRef.value || videoRef.value.readyState !== 4) {
       return
     }
     
     try {
-      const predictions = await model.value.detect(videoRef.value)
+      const raw = model.value.detectForVideo(videoRef.value, performance.now())
+      // Normalise to the same {class, score, bbox:[x,y,w,h]} shape used downstream
+      const predictions = raw.detections.map(d => ({
+        class: d.categories[0]?.categoryName ?? '',
+        score: d.categories[0]?.score ?? 0,
+        bbox: [
+          d.boundingBox.originX,
+          d.boundingBox.originY,
+          d.boundingBox.width,
+          d.boundingBox.height
+        ]
+      }))
       
       // Get video dimensions
       const videoWidth = videoRef.value.videoWidth
@@ -200,8 +226,10 @@ const startDetection = () => {
       const videoGuideBoxRight = guideBoxRight * scaleX
       const videoGuideBoxBottom = guideBoxBottom * scaleY
       
-      // Filter predictions to only those centered in the guide box
+      // Filter predictions to only those centered in the guide box,
+      // excluding 'person' detections entirely.
       const centeredPredictions = predictions.filter(p => {
+        // if (p.class === 'person') return false
         // p.bbox is [x, y, width, height]
         const objLeft = p.bbox[0]
         const objTop = p.bbox[1]
@@ -228,6 +256,7 @@ const startDetection = () => {
         // Calculate overlap area
         const overlapArea = (overlapRight - overlapLeft) * (overlapBottom - overlapTop)
         const objectArea = objWidth * objHeight
+        const guideBoxArea = guideBoxSize * guideBoxSize * scaleX * scaleY
         
         // Require at least 60% of object to be inside guide box AND center must be inside
         const overlapPercentage = overlapArea / objectArea
@@ -235,12 +264,47 @@ const startDetection = () => {
                            centerX <= videoGuideBoxRight &&
                            centerY >= videoGuideBoxTop && 
                            centerY <= videoGuideBoxBottom
-        
-        return overlapPercentage > 0.6 && centerInside
+
+        // Foreground check: object must fill at least 25% of the guide box
+        const guideFillPercentage = overlapArea / guideBoxArea
+
+        return overlapPercentage > 0.6 && centerInside && guideFillPercentage > 0.25
       })
-      
+
+      // --- Debug overlay: draw all detection bounding boxes ---
+      const debugCanvas = debugCanvasRef.value
+      if (debugCanvas && showDebugOverlay.value) {
+        debugCanvas.width = displayWidth
+        debugCanvas.height = displayHeight
+        const ctx = debugCanvas.getContext('2d')
+        ctx.clearRect(0, 0, displayWidth, displayHeight)
+        const guideBoxAreaDisplay = guideBoxSize * guideBoxSize
+        for (const p of predictions) {
+          const x = p.bbox[0] / scaleX
+          const y = p.bbox[1] / scaleY
+          const w = p.bbox[2] / scaleX
+          const h = p.bbox[3] / scaleY
+          const isCentered = centeredPredictions.includes(p)
+          // Guide fill % in display coords for label
+          const ix = Math.max(x, guideBoxLeft)
+          const iy = Math.max(y, guideBoxTop)
+          const iw = Math.min(x + w, guideBoxRight) - ix
+          const ih = Math.min(y + h, guideBoxBottom) - iy
+          const fillPct = (iw > 0 && ih > 0) ? Math.round((iw * ih) / guideBoxAreaDisplay * 100) : 0
+          // Green = passes all checks, yellow = outside/too small
+          ctx.strokeStyle = isCentered ? '#00ff88' : '#facc15'
+          ctx.lineWidth = 2
+          ctx.strokeRect(x, y, w, h)
+          const label = `${p.class} ${Math.round(p.score * 100)}% fill:${fillPct}%`
+          ctx.font = 'bold 12px monospace'
+          ctx.fillStyle = isCentered ? '#00ff88' : '#facc15'
+          const labelY = y > 18 ? y - 4 : y + h + 14
+          ctx.fillText(label, x + 2, labelY)
+        }
+      }
+
       // Check if any object detected with reasonable confidence in the center box
-      const detected = centeredPredictions.some(p => p.score > 0.5)
+      const detected = centeredPredictions.some(p => p.score > 0.2)
       
       // Don't start new countdown if batch processing or in post-capture cooldown
       if (detected && !objectDetected.value && !isBatchProcessing.value && !captureCooldown.value) {
@@ -267,6 +331,11 @@ const stopDetection = () => {
   }
   cancelCountdown()
   objectDetected.value = false
+  // Clear debug overlay
+  const debugCanvas = debugCanvasRef.value
+  if (debugCanvas) {
+    debugCanvas.getContext('2d').clearRect(0, 0, debugCanvas.width, debugCanvas.height)
+  }
 }
 
 const close = () => {
@@ -279,16 +348,26 @@ const handleKeyDown = (event) => {
     close()
   } else if (event.key === 'Enter' && !isBatchProcessing.value) {
     finishScanning()
+  } else if (event.key === 'd' || event.key === 'D') {
+    toggleDebugOverlay()
+  } else if ((event.key === 'c' || event.key === 'C') && !isBatchProcessing.value && !captureCooldown.value) {
+    captureImage()
   }
 }
 
 onMounted(async () => {
-  // Load COCO-SSD model first
+  // Load MediaPipe EfficientDet model (all assets served locally)
   try {
-    // Set backend to webgl
-    await tf.setBackend('webgl'); 
-    await tf.ready(); // Wait for backend to be ready
-    model.value = await cocoSsd.load()
+    const vision = await FilesetResolver.forVisionTasks('/mediapipe/wasm')
+    model.value = await ObjectDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: '/mediapipe/efficientdet_lite0.tflite',
+        delegate: 'GPU'
+      },
+      scoreThreshold: 0.1,
+      runningMode: 'VIDEO',
+      categoryDenylist: ["person"]
+    })
     isModelLoading.value = false
   } catch (e) {
     console.error('Failed to load detection model:', e)
@@ -333,6 +412,7 @@ onUnmounted(() => {
             class="camera-video"
           ></video>
           <canvas ref="canvasRef" style="display: none;"></canvas>
+          <canvas ref="debugCanvasRef" class="debug-overlay"></canvas>
           
           <div class="camera-guide">
             <div class="guide-box" :class="{ 'detected': objectDetected, 'processing': isProcessing }">
@@ -483,6 +563,16 @@ onUnmounted(() => {
   height: auto;
   border-radius: 8px;
   display: block;
+}
+
+.debug-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 8px;
 }
 
 .camera-guide {

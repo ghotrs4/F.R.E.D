@@ -9,8 +9,54 @@ const props = defineProps({
   packagingType: String,
   storageLocation: String,
   expirationDate: String,
-  notes: String
+  notes: String,
+  imageBlob: Object,   // Blob from the camera capture, available for in-session scans
+  localResult: Object  // Local ResNet18 result returned alongside the Gemini batch prediction
 })
+
+const isComparing   = ref(false)
+const compareResult = ref(null)
+const compareError  = ref(null)
+
+// Build the comparison panel immediately from the batch-time local result,
+// so no extra button click / second Gemini call is needed.
+const buildCompareFromProps = () => {
+  if (!props.localResult) return
+  const geminiSide = {
+    predicted_class: props.predictedClass,
+    confidence: props.confidence,
+    top5: props.top5 ?? []
+  }
+  const l = (props.localResult.predicted_class ?? '').toLowerCase()
+  const g = (props.predictedClass ?? '').toLowerCase()
+  const agree = !!(l && g && (l.includes(g) || g.includes(l) || l === g))
+  compareResult.value = {
+    local:     props.localResult,
+    gemini:    geminiSide,
+    agreement: agree
+  }
+}
+
+const runComparison = async () => {
+  if (!props.imageBlob || isComparing.value) return
+  isComparing.value  = true
+  compareResult.value = null
+  compareError.value  = null
+  try {
+    const formData = new FormData()
+    formData.append('image', props.imageBlob, 'scan.jpg')
+    const response = await fetch('http://localhost:5000/api/classify-food/compare', {
+      method: 'POST',
+      body: formData
+    })
+    if (!response.ok) throw new Error(`Server error ${response.status}`)
+    compareResult.value = await response.json()
+  } catch (err) {
+    compareError.value = err.message
+  } finally {
+    isComparing.value = false
+  }
+}
 
 const emit = defineEmits(['close', 'confirm', 'remove'])
 
@@ -26,6 +72,7 @@ const categories = [
   { value: 'dairy', label: 'Dairy' },
   { value: 'produce', label: 'Produce' },
   { value: 'meat', label: 'Meat' },
+  { value: 'seafood', label: 'Seafood' },
   { value: 'beverage', label: 'Beverage' },
   { value: 'condiment', label: 'Condiment' },
   { value: 'prepared', label: 'Prepared' },
@@ -63,6 +110,8 @@ const selectPrediction = (predictionName, confidence) => {
 
 // Pre-fill form based on AI-extracted data
 onMounted(() => {
+  buildCompareFromProps()
+
   if (props.predictedClass) {
     foodName.value = props.predictedClass
     // Normalize selectedPrediction to match top5 casing so the selected highlight works
@@ -197,10 +246,78 @@ const removeItem = () => {
               </div>
             </div>
           </div>
+
+        <!-- Model Comparison -->
+        <!-- Auto-shown for fresh scans (localResult prop); button is fallback for older items -->
+        <div v-if="imageBlob || compareResult" class="compare-section">
+          <button
+            v-if="imageBlob && !compareResult"
+            class="compare-trigger-btn"
+            :disabled="isComparing"
+            @click="runComparison"
+          >
+            <span v-if="isComparing">⏳ Running comparison…</span>
+            <span v-else>🔬 Compare with Local Model</span>
+          </button>
+
+          <p v-if="compareError" class="compare-error">{{ compareError }}</p>
+
+          <div v-if="compareResult" class="compare-panel">
+            <h4 class="compare-title">Model Comparison</h4>
+
+            <div class="compare-grid">
+              <!-- Gemini column -->
+              <div class="compare-col">
+                <div class="compare-col-header gemini-header">Gemini</div>
+                <div class="compare-top1">{{ compareResult.gemini?.predicted_class ?? predictedClass }}</div>
+                <div class="compare-conf" :style="{ color: confidenceColor }">
+                  {{ (compareResult.gemini?.confidence ?? confidence).toFixed(1) }}%
+                </div>
+                <div class="compare-list">
+                  <div
+                    v-for="p in (compareResult.gemini?.top5 ?? top5 ?? []).slice(0, 5)"
+                    :key="p.class"
+                    class="compare-row"
+                  >
+                    <span class="compare-name">{{ p.class }}</span>
+                    <span class="compare-pct">{{ typeof p.confidence === 'number' ? p.confidence.toFixed(1) : p.confidence }}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Local model column -->
+              <div class="compare-col" :class="{ 'compare-col-error': compareResult.local?.error }">
+                <div class="compare-col-header local-header">Local (ResNet18)</div>
+                <template v-if="!compareResult.local?.error">
+                  <div class="compare-top1">{{ compareResult.local.predicted_class }}</div>
+                  <div class="compare-conf">{{ compareResult.local.confidence.toFixed(1) }}%</div>
+                  <div class="compare-list">
+                    <div
+                      v-for="p in (compareResult.local.top5 ?? []).slice(0, 5)"
+                      :key="p.class"
+                      class="compare-row"
+                    >
+                      <span class="compare-name">{{ p.class }}</span>
+                      <span class="compare-pct">{{ p.confidence.toFixed(1) }}%</span>
+                    </div>
+                  </div>
+                </template>
+                <p v-else class="compare-unavailable">{{ compareResult.local.error }}</p>
+              </div>
+            </div>
+
+            <div
+              class="compare-verdict"
+              :class="compareResult.agreement ? 'verdict-agree' : 'verdict-disagree'"
+            >
+              {{ compareResult.agreement ? '✓ Models agree' : '✗ Models disagree' }}
+            </div>
+          </div>
         </div>
-        
+        </div>
+
         <div class="divider"></div>
-        
+
         <!-- Food Details Form -->
         <div class="form-section">
           <h3>Food Details</h3>
@@ -549,5 +666,164 @@ const removeItem = () => {
   background: oklch(0.6 0.22 25);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(255, 100, 100, 0.3);
+}
+
+/* ── Model comparison ─────────────────────────────────── */
+.compare-section {
+  margin-top: 20px;
+}
+
+.compare-trigger-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background: oklch(0.28 0.05 265);
+  border: 1px solid oklch(0.45 0.1 265);
+  border-radius: 8px;
+  color: oklch(0.85 0.1 265);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.compare-trigger-btn:hover:not(:disabled) {
+  background: oklch(0.33 0.08 265);
+  border-color: oklch(0.55 0.15 265);
+}
+
+.compare-trigger-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.compare-error {
+  color: oklch(0.7 0.2 25);
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+.compare-panel {
+  margin-top: 16px;
+  background: oklch(0.22 0.02 250);
+  border: 1px solid oklch(0.32 0.04 265);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.compare-title {
+  color: oklch(0.8 0.02 250);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 14px;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.compare-col {
+  background: oklch(0.25 0.02 250);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.compare-col-error {
+  opacity: 0.7;
+}
+
+.compare-col-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.gemini-header {
+  background: oklch(0.3 0.1 265);
+  color: oklch(0.8 0.15 265);
+}
+
+.local-header {
+  background: oklch(0.3 0.08 145);
+  color: oklch(0.8 0.15 145);
+}
+
+.compare-top1 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: oklch(0.95 0.02 250);
+  text-transform: capitalize;
+  margin: 6px 0 2px;
+}
+
+.compare-conf {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: oklch(0.7 0.12 145);
+  margin-bottom: 10px;
+}
+
+.compare-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compare-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  padding: 3px 0;
+  border-bottom: 1px solid oklch(0.3 0.01 250);
+}
+
+.compare-name {
+  color: oklch(0.8 0.01 250);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 75%;
+}
+
+.compare-pct {
+  color: oklch(0.65 0.05 250);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.compare-unavailable {
+  color: oklch(0.6 0.1 25);
+  font-size: 0.8rem;
+  margin: 8px 0 0;
+}
+
+.compare-verdict {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.verdict-agree {
+  background: oklch(0.25 0.06 145);
+  color: oklch(0.75 0.18 145);
+  border: 1px solid oklch(0.4 0.1 145);
+}
+
+.verdict-disagree {
+  background: oklch(0.25 0.06 25);
+  color: oklch(0.75 0.18 25);
+  border: 1px solid oklch(0.4 0.1 25);
 }
 </style>

@@ -64,3 +64,20 @@ export async function getTemperatureHistory() {
     return []
   }
 }
+
+/**
+ * Get MQ gas sensor history for the last 12 hours
+ * @returns {Promise<Array>} Array of MQ sensor readings with timestamps
+ */
+export async function getMqHistory() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stats/mq`)
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    console.error('Error fetching MQ history:', error)
+    return []
+  }
+}

@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { loadFoodsFromCSV, createFood, updateFood, deleteFood } from '../utils/csvParser'
+
+defineOptions({ name: 'Inventory' })
 import { recordItemOutcome } from '../utils/statsApi'
 
 const props = defineProps({
@@ -8,10 +10,25 @@ const props = defineProps({
   pendingItems: {
     type: Array,
     default: () => []
+  },
+  outgoingItems: {
+    type: Array,
+    default: () => []
+  },
+  disambiguationItems: {
+    type: Array,
+    default: () => []
+  },
+  claimedByOthers: {
+    // Map of { [disambiguationId]: { confirmedIds: Set, removedIds: Set } }
+    // Computed in App.vue and passed down so sibling-claimed options can be
+    // visually disabled without altering the underlying data.
+    type: Object,
+    default: () => ({})
   }
 })
 
-const emit = defineEmits(['viewPendingItem'])
+const emit = defineEmits(['viewPendingItem', 'switchToIncoming', 'markAsNew', 'resolveDisambiguation', 'okDisambiguation'])
 
 const count = ref(0)
 const sortBy = ref(localStorage.getItem('inventorySortBy') || 'freshnessScore') // Restore from localStorage or default
@@ -22,6 +39,7 @@ const controlsExpanded = ref(localStorage.getItem('inventoryControlsExpanded') =
 const selectedCard = ref(null)
 const showPopup = ref(false)
 const showAddPopup = ref(false)
+const showSpoilageBreakdown = ref(false)
 const isEditMode = ref(false)
 const showDeleteConfirm = ref(false)
 const cards = ref([])
@@ -50,6 +68,7 @@ const foodGroups = [
   { value: 'dairy', label: 'Dairy' },
   { value: 'produce', label: 'Produce' },
   { value: 'meat', label: 'Meat' },
+  { value: 'seafood', label: 'Seafood' },
   { value: 'beverage', label: 'Beverage' },
   { value: 'condiment', label: 'Condiment' },
   { value: 'prepared', label: 'Prepared' },
@@ -95,6 +114,7 @@ const pendingCards = computed(() => {
     
     return {
       id: `pending-${item.id}`,
+      realId: item.id,
       title: item.predicted_class,
       name: item.predicted_class,
       foodGroup: item.category || 'other',
@@ -103,9 +123,61 @@ const pendingCards = computed(() => {
       expirationDate: item.expiration_date || '',
       confidence: item.confidence,
       isPending: true,
-      freshnessScore: 100, // Default fresh score for pending items
+      isReentry: !!item.isReentry,
+      freshnessScore: item.isReentry ? (item.freshness_score ?? 100) : 100,
       daysUntilSpoilage: daysUntilSpoilage,
-      timeInFridge: timeInFridge
+      timeInFridge: timeInFridge,
+      entryDate: item.entry_date || '',
+      description: item.description || '',
+      safetyCategory: item.safety_category || '',
+      warnings: item.warnings || [],
+      cumulativeTempAbuse: item.cumulative_temp_abuse ?? 0,
+      environmentAlerts: item.environment_alerts || []
+    }
+  })
+})
+
+// Computed property for outgoing items formatted as cards
+const outgoingCards = computed(() => {
+  return props.outgoingItems.map(item => ({
+    id: `outgoing-${item.id}`,
+    realId: item.id,
+    title: item.name,
+    name: item.name,
+    foodGroup: item.foodGroup || 'other',
+    packagingType: item.packagingType || 'sealed',
+    storageLocation: item.storageLocation || 'regular',
+    expirationDate: item.expirationDate || '',
+    isOutgoing: true,
+    freshnessScore: item.freshnessScore ?? 100,
+    daysUntilSpoilage: item.daysUntilSpoilage ?? 7,
+    timeInFridge: item.timeInFridge || '0 days',
+    entryDate: item.entryDate || '',
+    description: item.description || '',
+    safetyCategory: item.safetyCategory || '',
+    warnings: item.warnings || [],
+    cumulativeTempAbuse: item.cumulativeTempAbuse ?? 0,
+    environmentAlerts: item.environmentAlerts || []
+  }))
+})
+
+// Computed property for disambiguation items formatted as cards
+const disambiguationCards = computed(() => {
+  return props.disambiguationItems.map(item => {
+    const claimed = props.claimedByOthers[item.id] || { confirmedIds: new Set(), removedIds: new Set() }
+    return {
+      id: item.id,
+      isDisambiguation: true,
+      disambiguationType: item.type,
+      confirmedMatches: item.confirmedMatches || [],
+      removedMatches: item.removedMatches || [],
+      defaultOutgoingId: item.defaultOutgoingId || null,
+      defaultReentryId: item.defaultReentryId || null,
+      selectedAction: item.selectedAction || null,
+      selectedTargetId: item.selectedTargetId || null,
+      // IDs already selected by a sibling card — buttons should be disabled
+      siblingClaimedConfirmedIds: claimed.confirmedIds,
+      siblingClaimedRemovedIds: claimed.removedIds
     }
   })
 })
@@ -144,8 +216,8 @@ const sortedCards = computed(() => {
     return sortDirection.value === 'desc' ? -comparison : comparison
   })
   
-  // Add pending items at the beginning
-  return [...pendingCards.value, ...sorted]
+  // Add disambiguation cards first, then outgoing, then pending, then sorted confirmed
+  return [...disambiguationCards.value, ...outgoingCards.value, ...pendingCards.value, ...sorted]
 })
 
 // Save sort and filter preferences to localStorage
@@ -205,7 +277,42 @@ const getAlertsForFood = (food) => {
       message: `Low freshness (${Math.round(food.freshnessScore)}/100).`
     })
   }
-  
+
+  // Cumulative time outside the fridge at unsafe temperatures
+  if (food.cumulativeTempAbuse > 0) {
+    const h = food.cumulativeTempAbuse
+    const label = h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`
+    const alertType = h >= 4 ? 'critical' : 'warning'
+    alerts.push({
+      type: alertType,
+      message: `Spent ${label} at unsafe temperatures (outside fridge or during transport).`
+    })
+  }
+
+  // In-fridge environment alerts (unsafe fridge temperature / humidity events)
+  if (food.environmentAlerts && food.environmentAlerts.length > 0) {
+    // Group by type and sum durations so we don't show 20 individual rows
+    const grouped = {}
+    for (const ea of food.environmentAlerts) {
+      if (!grouped[ea.alert_type]) grouped[ea.alert_type] = { total: 0, count: 0, latest: ea.detected_at }
+      grouped[ea.alert_type].total += ea.duration_hours
+      grouped[ea.alert_type].count += 1
+      if (ea.detected_at > grouped[ea.alert_type].latest) grouped[ea.alert_type].latest = ea.detected_at
+    }
+    for (const [type, info] of Object.entries(grouped)) {
+      const h = info.total
+      const label = h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`
+      const typeLabel = type === 'temperature' ? 'unsafe fridge temperature'
+                      : type === 'humidity'    ? 'unsafe fridge humidity'
+                      : 'unsafe fridge temperature and humidity'
+      const alertLevel = h >= 1 ? 'critical' : 'warning'
+      alerts.push({
+        type: alertLevel,
+        message: `Fridge conditions were unsafe (${typeLabel}) for ${label} while this item was stored.`
+      })
+    }
+  }
+
   return alerts
 }
 
@@ -217,15 +324,62 @@ const selectedCardAlerts = computed(() => {
 const handleCardClick = (cardId) => {
   // Check if it's a pending item
   if (cardId.startsWith('pending-')) {
+    const pendingCard = pendingCards.value.find(c => c.id === cardId)
+    // Re-entry cards show the details popup (read-only)
+    if (pendingCard && pendingCard.isReentry) {
+      selectedCard.value = pendingCard
+      showPopup.value = true
+      return
+    }
+    // Regular pending cards show the scan-confirmation popup
     const pendingItem = props.pendingItems.find(item => `pending-${item.id}` === cardId)
     if (pendingItem) {
       emit('viewPendingItem', pendingItem)
       return
     }
   }
-  
+
+  // Outgoing cards show the details popup (read-only)
+  if (cardId.startsWith('outgoing-')) {
+    const outgoingCard = outgoingCards.value.find(c => c.id === cardId)
+    if (outgoingCard) {
+      selectedCard.value = outgoingCard
+      showPopup.value = true
+    }
+    return
+  }
+
+  // Skip disambiguation cards — buttons inside handle all actions
+  if (cardId.startsWith('disambiguation-')) {
+    return
+  }
+
   // Regular card click
   selectedCard.value = cards.value.find(card => card.id === cardId)
+  showPopup.value = true
+}
+
+const handleSubCardClick = (subItem, isRemoved) => {
+  selectedCard.value = {
+    id: subItem.id,
+    title: subItem.name,
+    name: subItem.name,
+    foodGroup: subItem.foodGroup || 'other',
+    packagingType: subItem.packagingType || '',
+    storageLocation: subItem.storageLocation || 'regular',
+    expirationDate: subItem.expirationDate || '',
+    freshnessScore: subItem.freshnessScore ?? 100,
+    daysUntilSpoilage: subItem.daysUntilSpoilage ?? 7,
+    timeInFridge: isRemoved ? `removed ${subItem.hoursOutside ?? 0}h ago` : (subItem.timeInFridge ?? ''),
+    entryDate: subItem.entryDate || '',
+    description: subItem.description || '',
+    cumulativeTempAbuse: subItem.cumulativeTempAbuse ?? 0,
+    environmentAlerts: subItem.environmentAlerts || [],
+    warnings: subItem.warnings || [],
+    safetyCategory: subItem.safetyCategory || '',
+    // Mark read-only so the popup hides edit/delete controls
+    isOutgoing: true
+  }
   showPopup.value = true
 }
 
@@ -233,6 +387,38 @@ const closePopup = () => {
   showPopup.value = false
   selectedCard.value = null
   isEditMode.value = false
+  showSpoilageBreakdown.value = false
+}
+
+const factorClass = (v) => {
+  if (v === undefined || v === null) return ''
+  if (v >= 0.95) return 'factor-good'
+  if (v >= 0.7) return 'factor-warn'
+  return 'factor-bad'
+}
+
+const tempFactorStatus = (v) => {
+  if (v === undefined || v === null) return ''
+  if (v >= 1.0) return '✓ Optimal or cooler'
+  if (v >= 0.95) return '✓ Safe range'
+  if (v >= 0.75) return '⚠ Elevated – accelerating spoilage'
+  return '⚠ High – significant spoilage acceleration'
+}
+
+const abuseSummary = (cumulativeHours, tempFactor) => {
+  if (!cumulativeHours || cumulativeHours <= 0) return 'No exposure recorded'
+  const hStr = cumulativeHours < 1
+    ? `${Math.round(cumulativeHours * 60)} min`
+    : `${cumulativeHours.toFixed(1)}h`
+  if (tempFactor !== undefined && tempFactor < 0.95)
+    return `${hStr} total — currently ongoing`
+  return `${hStr} total — temperature normalized`
+}
+
+const formatAbuseHours = (hours) => {
+  if (!hours || hours <= 0) return ''
+  if (hours < 1) return `${Math.round(hours * 60)}m`
+  return `${hours.toFixed(1)}h`
 }
 
 const openAddPopup = () => {
@@ -294,7 +480,7 @@ const saveEdit = async () => {
     
     // Refresh the list
     const updatedFoods = await loadFoodsFromCSV()
-    const confirmedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    const confirmedFoods = updatedFoods.filter(food => food.status === 'confirmed')
     cards.value = confirmedFoods.map(food => ({
       ...food,
       title: food.name
@@ -332,7 +518,7 @@ const confirmDelete = async () => {
     
     // Refresh the list
     const updatedFoods = await loadFoodsFromCSV()
-    const confirmedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    const confirmedFoods = updatedFoods.filter(food => food.status === 'confirmed')
     cards.value = confirmedFoods.map(food => ({
       ...food,
       title: food.name
@@ -377,7 +563,7 @@ const handleAddFood = async () => {
     
     // Refresh the list
     const updatedFoods = await loadFoodsFromCSV()
-    const confirmedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    const confirmedFoods = updatedFoods.filter(food => food.status === 'confirmed')
     cards.value = confirmedFoods.map(food => ({
       ...food,
       title: food.name
@@ -405,22 +591,19 @@ const handleKeyDown = (event) => {
 
 let cardsUpdateInterval
 
-onMounted(async () => {
+onActivated(async () => {
+  // Refresh confirmed cards when the user navigates back to this page
   const foods = await loadFoodsFromCSV()
-  // Filter out pending items (they're shown via props.pendingItems)
-  const confirmedFoods = foods.filter(food => food.status !== 'pending')
-  // Transform foods to cards format with title property
-  cards.value = confirmedFoods.map(food => ({
-    ...food,
-    title: food.name
-  }))
+  const confirmedFoods = foods.filter(food => food.status === 'confirmed')
+  cards.value = confirmedFoods.map(food => ({ ...food, title: food.name }))
+
   window.addEventListener('keydown', handleKeyDown)
-  
+
   // Poll for food data updates every 3 seconds
   cardsUpdateInterval = setInterval(async () => {
     const updatedFoods = await loadFoodsFromCSV()
-    // Filter out pending items
-    const confirmedUpdatedFoods = updatedFoods.filter(food => food.status !== 'pending')
+    // Filter out non-confirmed items
+    const confirmedUpdatedFoods = updatedFoods.filter(food => food.status === 'confirmed')
     const updatedCards = confirmedUpdatedFoods.map(food => ({
       ...food,
       title: food.name
@@ -432,7 +615,7 @@ onMounted(async () => {
   }, 3000)
 })
 
-onUnmounted(() => {
+onDeactivated(() => {
   window.removeEventListener('keydown', handleKeyDown)
   clearInterval(cardsUpdateInterval)
 })
@@ -512,24 +695,168 @@ const getFreshnessColor = (score) => {
       <p>No items to display</p>
     </div>
 
-    <!-- Cards Grid -->
-    <div v-else class="cards-grid">
-      <div 
-        v-for="card in sortedCards" 
-        :key="card.id"
-        class="card-item"
-        :class="{ 'pending-card': card.isPending }"
-        :style="{ borderColor: card.isPending ? 'oklch(0.55 0.2 45)' : getFreshnessColor(card.freshnessScore) }"
-        @click="handleCardClick(card.id)"
-      >
-        <div v-if="card.isPending" class="pending-badge">Pending</div>
-        <div class="card-header">
-          <h3>{{ card.title }}</h3>
-          <span v-if="!card.isPending" class="freshness-score" :style="{ color: getFreshnessColor(card.freshnessScore) }">{{ Math.round(card.freshnessScore) }}</span>
+    <!-- Disambiguation cards — displayed side by side above the main grid -->
+    <div v-if="disambiguationCards.length > 0" class="disambiguation-row">
+      <div v-for="card in disambiguationCards" :key="'dis-' + card.id" class="disambiguation-card">
+          <div class="disambiguation-header">
+            <span class="disambiguation-icon">⚠️</span>
+            <div>
+              <h3 class="disambiguation-title">
+                {{ card.disambiguationType === 'multi_confirmed'
+                  ? 'Multiple matching items found'
+                  : card.disambiguationType === 'multi_removed'
+                    ? 'Multiple removed items match'
+                    : card.disambiguationType === 'outgoing_or_new'
+                      ? 'Existing item match — going out or new?'
+                      : 'Returning item or another going out?' }}
+              </h3>
+              <p class="disambiguation-subtitle">
+                {{ card.disambiguationType === 'multi_confirmed'
+                  ? 'Which one is being taken out of the fridge?'
+                  : card.disambiguationType === 'multi_removed'
+                    ? 'Which one is returning to the fridge?'
+                    : card.disambiguationType === 'outgoing_or_new'
+                      ? 'Is this a brand-new item being added, or is the existing one going out?'
+                      : 'Is one of these returning, or is a confirmed item being removed?' }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Re-entry candidates -->
+          <div v-if="card.removedMatches.length > 0" class="disambiguation-section">
+            <div class="disambiguation-section-label">Recently removed — possible re-entry</div>
+            <div
+              v-for="removed in card.removedMatches"
+              :key="removed.id"
+              class="disambiguation-sub-card reentry-sub-card"
+              :class="{
+                'default-selected-reentry': removed.id === card.defaultReentryId && card.selectedAction === null,
+                'user-selected-reentry': card.selectedAction === 'mark_reentry' && removed.id === card.selectedTargetId
+              }"
+              @click="handleSubCardClick(removed, true)"
+            >
+              <div class="sub-card-info">
+                <span class="sub-card-name">{{ removed.name }}</span>
+                <span class="sub-card-detail">Outside: {{ removed.hoursOutside }}h</span>
+                <span class="sub-card-detail">Freshness: {{ Math.round(removed.freshnessScore) }}</span>
+              </div>
+              <button
+                class="sub-card-action-btn reentry-action-btn"
+                :class="{
+                  'btn-suggested': removed.id === card.defaultReentryId && card.selectedAction === null,
+                  'btn-user-selected': card.selectedAction === 'mark_reentry' && removed.id === card.selectedTargetId,
+                  'btn-claimed': card.siblingClaimedRemovedIds.has(removed.id) && !(card.selectedAction === 'mark_reentry' && removed.id === card.selectedTargetId)
+                }"
+                :disabled="card.siblingClaimedRemovedIds.has(removed.id) && !(card.selectedAction === 'mark_reentry' && removed.id === card.selectedTargetId)"
+                @click.stop="emit('resolveDisambiguation', card.id, 'mark_reentry', removed.id)"
+              >{{
+                card.siblingClaimedRemovedIds.has(removed.id) && !(card.selectedAction === 'mark_reentry' && removed.id === card.selectedTargetId)
+                  ? '⛔ Claimed by another scan'
+                  : card.selectedAction === 'mark_reentry' && removed.id === card.selectedTargetId
+                    ? '✓ Re-entry Selected'
+                    : '↩ Mark as Re-entry'
+              }}</button>
+            </div>
+          </div>
+
+          <!-- Confirmed items in fridge -->
+          <div v-if="card.confirmedMatches.length > 0" class="disambiguation-section">
+            <div class="disambiguation-section-label">
+              {{ card.disambiguationType === 'multi_confirmed' ? 'Select the item being removed:' : 'Or — mark a confirmed item as going out:' }}
+            </div>
+            <div
+              v-for="match in card.confirmedMatches"
+              :key="match.id"
+              class="disambiguation-sub-card"
+              :class="{
+                'default-selected-outgoing': match.id === card.defaultOutgoingId && !card.defaultReentryId && card.selectedAction === null,
+                'user-selected-outgoing': card.selectedAction === 'mark_outgoing' && match.id === card.selectedTargetId
+              }"
+              @click="handleSubCardClick(match, false)"
+            >
+              <div class="sub-card-info">
+                <span class="sub-card-name">{{ match.name }}</span>
+                <span class="sub-card-detail">In fridge: {{ match.timeInFridge }}</span>
+                <span class="sub-card-detail">Freshness: {{ Math.round(match.freshnessScore) }}</span>
+              </div>
+              <button
+                class="sub-card-action-btn outgoing-action-btn"
+                :class="{
+                  'btn-suggested-outgoing': match.id === card.defaultOutgoingId && !card.defaultReentryId && card.selectedAction === null,
+                  'btn-user-selected-outgoing': card.selectedAction === 'mark_outgoing' && match.id === card.selectedTargetId,
+                  'btn-claimed': card.siblingClaimedConfirmedIds.has(match.id) && !(card.selectedAction === 'mark_outgoing' && match.id === card.selectedTargetId)
+                }"
+                :disabled="card.siblingClaimedConfirmedIds.has(match.id) && !(card.selectedAction === 'mark_outgoing' && match.id === card.selectedTargetId)"
+                @click.stop="emit('resolveDisambiguation', card.id, 'mark_outgoing', match.id)"
+              >{{
+                card.siblingClaimedConfirmedIds.has(match.id) && !(card.selectedAction === 'mark_outgoing' && match.id === card.selectedTargetId)
+                  ? '⛔ Claimed by another scan'
+                  : card.selectedAction === 'mark_outgoing' && match.id === card.selectedTargetId
+                    ? '✓ Selected'
+                    : 'Select'
+              }}</button>
+            </div>
+          </div>
+
+          <button
+            class="disambiguation-keep-new-btn"
+            :class="{ 'keep-new-selected': card.selectedAction === 'keep_new' }"
+            @click.stop="emit('resolveDisambiguation', card.id, 'keep_new', null)"
+          >{{ card.selectedAction === 'keep_new' ? '✓ Keeping as New Item' : '+ Keep as New Item' }}</button>
+
+          <button
+            class="disambiguation-ok-btn"
+            :disabled="!card.selectedAction"
+            @click.stop="emit('okDisambiguation', card.id)"
+          >OK</button>
         </div>
-        <p>Estimated days until spoilage: {{ card.daysUntilSpoilage }}</p>
-        <p>Time in fridge: {{ card.timeInFridge }}</p>
-      </div>
+
+    </div>
+
+    <!-- Cards Grid -->
+    <div v-if="sortedCards.some(c => !c.isDisambiguation)" class="cards-grid">
+      <template v-for="card in sortedCards">
+
+        <!-- ── Disambiguation card (skip — rendered above) ── -->
+        <template v-if="card.isDisambiguation" />
+
+        <!-- ── Normal / Pending / Outgoing / Reentry card ── -->
+        <div
+          v-else
+          :key="'card-' + card.id"
+          class="card-item"
+          :class="{ 'pending-card': card.isPending && !card.isReentry, 'reentry-card': card.isReentry, 'outgoing-card': card.isOutgoing }"
+          :style="{ borderColor: card.isReentry ? 'oklch(0.55 0.18 200)' : card.isPending ? 'oklch(0.55 0.2 45)' : card.isOutgoing ? 'oklch(0.5 0.2 15)' : getFreshnessColor(card.freshnessScore) }"
+          @click="handleCardClick(card.id)"
+        >
+          <div v-if="card.isPending && !card.isReentry" class="pending-badge">Pending</div>
+          <div v-if="card.isReentry" class="reentry-badge">Re-entry</div>
+          <div v-if="card.isOutgoing" class="outgoing-badge">Outgoing</div>
+          <div class="card-header">
+            <h3>{{ card.title }}</h3>
+            <span v-if="card.isReentry" class="freshness-score" :style="{ color: getFreshnessColor(card.freshnessScore) }">{{ Math.round(card.freshnessScore) }}</span>
+            <span v-else-if="!card.isPending && !card.isOutgoing" class="freshness-score" :style="{ color: getFreshnessColor(card.freshnessScore) }">{{ Math.round(card.freshnessScore) }}</span>
+          </div>
+          <p>Estimated days until spoilage: {{ card.daysUntilSpoilage }}</p>
+          <p>Time in fridge: {{ card.timeInFridge }}</p>
+          <!-- <p
+            v-if="!card.isPending && !card.isOutgoing && !card.isReentry && card.cumulativeTempAbuse > 0"
+            class="temp-abuse-line"
+            :title="`${card.cumulativeTempAbuse.toFixed(1)}h at unsafe temperature (>${8}°C)`"
+          >🌡️ Unsafe: {{ formatAbuseHours(card.cumulativeTempAbuse) }}</p> -->
+          <button
+            v-if="card.isOutgoing"
+            class="keep-as-new-btn"
+            @click.stop="emit('switchToIncoming', card.realId)"
+          >Keep as New</button>
+          <button
+            v-if="card.isReentry"
+            class="mark-as-new-btn"
+            @click.stop="emit('markAsNew', card.realId)"
+          >Mark as New Item</button>
+        </div>
+
+      </template>
     </div>
 
     <!-- Food Details Popup -->
@@ -545,7 +872,7 @@ const getFreshnessColor = (score) => {
               class="edit-title-input"
               placeholder="Food name"
             />
-            <button v-if="!isEditMode" class="edit-button" @click="enableEditMode" title="Edit food item">
+            <button v-if="!isEditMode && !selectedCard?.isOutgoing && !selectedCard?.isReentry" class="edit-button" @click="enableEditMode" title="Edit food item">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
               </svg>
@@ -567,6 +894,7 @@ const getFreshnessColor = (score) => {
               <option value="dairy">Dairy</option>
               <option value="produce">Produce</option>
               <option value="meat">Meat</option>
+              <option value="seafood">Seafood</option>
               <option value="beverage">Beverage</option>
               <option value="condiment">Condiment</option>
               <option value="prepared">Prepared/Leftovers</option>
@@ -604,6 +932,68 @@ const getFreshnessColor = (score) => {
             <span class="detail-label">Days Until Spoilage:</span>
             <span class="detail-value">{{ selectedCard.daysUntilSpoilage }} days</span>
           </div>
+
+          <!-- Spoilage Rate + Expandable Factor Breakdown -->
+          <div
+            class="detail-item spoilage-rate-row"
+            @click="showSpoilageBreakdown = !showSpoilageBreakdown"
+            title="Click to see spoilage factors"
+          >
+            <span class="detail-label">Spoilage Rate:</span>
+            <span class="detail-value spoilage-rate-value">
+              {{
+                selectedCard.spoilageMetadata?.effective_shelf_life
+                  ? (100 / selectedCard.spoilageMetadata.effective_shelf_life).toFixed(2) + ' pts/day'
+                  : '--'
+              }}
+              <span class="expand-icon">{{ showSpoilageBreakdown ? '▲' : '▼' }}</span>
+            </span>
+          </div>
+          <div v-if="showSpoilageBreakdown && selectedCard.spoilageMetadata" class="spoilage-breakdown">
+            <div class="breakdown-row">
+              <span class="breakdown-label">Effective shelf life</span>
+              <span class="breakdown-value">{{ selectedCard.spoilageMetadata.effective_shelf_life?.toFixed(1) }} days</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">🌡️ Temperature factor</span>
+              <span class="breakdown-value" :class="factorClass(selectedCard.spoilageMetadata.temp_factor)">
+                × {{ selectedCard.spoilageMetadata.temp_factor?.toFixed(3) }}
+                <span class="factor-note">{{ tempFactorStatus(selectedCard.spoilageMetadata.temp_factor) }}</span>
+              </span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">💧 Humidity factor</span>
+              <span class="breakdown-value" :class="factorClass(selectedCard.spoilageMetadata.humidity_factor)">
+                × {{ selectedCard.spoilageMetadata.humidity_factor?.toFixed(3) }}
+              </span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">⚠️ Abuse factor</span>
+              <span class="breakdown-value" :class="factorClass(selectedCard.spoilageMetadata.abuse_factor)">
+                × {{ selectedCard.spoilageMetadata.abuse_factor?.toFixed(3) }}
+                <span class="factor-note">{{ abuseSummary(selectedCard.cumulativeTempAbuse, selectedCard.spoilageMetadata.temp_factor) }}</span>
+              </span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">📦 Packaging factor</span>
+              <span class="breakdown-value" :class="factorClass(selectedCard.spoilageMetadata.packaging_factor)">
+                × {{ selectedCard.spoilageMetadata.packaging_factor?.toFixed(3) }}
+              </span>
+            </div>
+          </div>
+
+          <div class="detail-item">
+            <span class="detail-label">Time at Unsafe Temp:</span>
+            <span class="detail-value" :style="{ color: (selectedCard.cumulativeTempAbuse ?? 0) >= 4 ? 'var(--color-critical, #e53e3e)' : (selectedCard.cumulativeTempAbuse ?? 0) > 0 ? 'var(--color-warning, #d97706)' : 'inherit' }">
+              {{
+                (selectedCard.cumulativeTempAbuse ?? 0) <= 0
+                  ? 'None'
+                  : (selectedCard.cumulativeTempAbuse ?? 0) < 1
+                    ? `${Math.round((selectedCard.cumulativeTempAbuse ?? 0) * 60)} min`
+                    : `${(selectedCard.cumulativeTempAbuse ?? 0).toFixed(1)} h`
+              }}
+            </span>
+          </div>
           <div class="detail-item">
             <span class="detail-label">Status:</span>
             <span class="detail-value" :style="{ color: getFreshnessColor(selectedCard.freshnessScore) }">
@@ -628,7 +1018,7 @@ const getFreshnessColor = (score) => {
           </div>
           
           <!-- Delete Button -->
-          <div v-if="!isEditMode" class="delete-section">
+          <div v-if="!isEditMode && !selectedCard?.isOutgoing && !selectedCard?.isReentry" class="delete-section">
             <button type="button" class="delete-button" @click="openDeleteConfirm">Remove From Inventory</button>
           </div>
           
@@ -675,6 +1065,7 @@ const getFreshnessColor = (score) => {
                 <option value="dairy">Dairy</option>
                 <option value="produce">Produce</option>
                 <option value="meat">Meat</option>
+                <option value="seafood">Seafood</option>
                 <option value="beverage">Beverage</option>
                 <option value="condiment">Condiment</option>
                 <option value="prepared">Prepared/Leftovers</option>
@@ -862,6 +1253,382 @@ const getFreshnessColor = (score) => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   z-index: 1;
+}
+
+/* Outgoing Card Styles */
+.outgoing-card {
+  background: linear-gradient(135deg, oklch(0.3 0.1 15) 0%, oklch(0.25 0.05 15) 100%);
+  position: relative;
+  border-width: 2px;
+}
+
+.outgoing-card:hover {
+  background: linear-gradient(135deg, oklch(0.35 0.12 15) 0%, oklch(0.3 0.08 15) 100%);
+}
+
+.outgoing-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: oklch(0.5 0.2 15);
+  color: oklch(0.95 0 0);
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  z-index: 1;
+}
+
+.keep-as-new-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: oklch(0.35 0.15 145);
+  border: 1px solid oklch(0.5 0.2 145);
+  border-radius: 6px;
+  color: oklch(0.95 0 0);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.keep-as-new-btn:hover {
+  background: oklch(0.4 0.18 145);
+  transform: translateY(-1px);
+}
+
+/* Re-entry Card Styles */
+.reentry-card {
+  background: linear-gradient(135deg, oklch(0.28 0.08 200) 0%, oklch(0.23 0.04 200) 100%);
+  position: relative;
+  border-width: 2px;
+}
+
+.reentry-card:hover {
+  background: linear-gradient(135deg, oklch(0.33 0.1 200) 0%, oklch(0.28 0.06 200) 100%);
+}
+
+.reentry-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: oklch(0.5 0.18 200);
+  color: oklch(0.95 0 0);
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  z-index: 1;
+}
+
+.mark-as-new-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: oklch(0.3 0.08 200);
+  border: 1px solid oklch(0.5 0.18 200);
+  border-radius: 6px;
+  color: oklch(0.95 0 0);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mark-as-new-btn:hover {
+  background: oklch(0.36 0.1 200);
+  transform: translateY(-1px);
+}
+
+/* ── Disambiguation card ── */
+.disambiguation-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20px, 300px));
+  gap: 1.5rem;
+  margin-top: 1rem;
+  margin-bottom: 0;
+  padding: 0 1rem;
+  width: 100%;
+}
+
+.disambiguation-card {
+  background: linear-gradient(135deg, oklch(0.22 0.04 275) 0%, oklch(0.18 0.03 275) 100%);
+  border: 2px solid oklch(0.52 0.16 275);
+  border-radius: 12px;
+  padding: 1.25rem;
+  position: relative;
+  grid-column: span 2;
+  min-width: 0;
+}
+
+.disambiguation-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.disambiguation-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.disambiguation-title {
+  margin: 0 0 0.2rem 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: oklch(0.92 0 0);
+}
+
+.disambiguation-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: oklch(0.62 0 0);
+}
+
+.disambiguation-section {
+  margin-bottom: 0.75rem;
+}
+
+.disambiguation-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: oklch(0.58 0 0);
+  margin-bottom: 0.4rem;
+}
+
+.disambiguation-sub-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: oklch(0.25 0.03 275);
+  border: 1px solid oklch(0.38 0.07 275);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.4rem;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.disambiguation-sub-card:hover {
+  filter: brightness(1.15);
+}
+
+.disambiguation-sub-card.default-selected-reentry {
+  border-color: oklch(0.65 0.2 200) !important;
+  background: oklch(0.26 0.09 200) !important;
+  box-shadow: 0 0 0 2px oklch(0.55 0.18 200), 0 0 12px oklch(0.45 0.15 200 / 0.4);
+}
+
+.disambiguation-sub-card.default-selected-outgoing {
+  border-color: oklch(0.65 0.2 30);
+  background: oklch(0.26 0.07 30);
+  box-shadow: 0 0 0 2px oklch(0.55 0.18 30), 0 0 12px oklch(0.45 0.15 30 / 0.4);
+}
+
+.suggested-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 0.1rem;
+  align-self: flex-start;
+}
+
+.reentry-badge-pill {
+  background: oklch(0.45 0.18 200);
+  color: oklch(0.96 0 0);
+}
+
+.outgoing-badge-pill {
+  background: oklch(0.45 0.18 30);
+  color: oklch(0.96 0 0);
+}
+
+.btn-suggested {
+  background: oklch(0.38 0.15 200) !important;
+  border-color: oklch(0.6 0.2 200) !important;
+  box-shadow: 0 0 8px oklch(0.5 0.18 200 / 0.5);
+}
+
+.btn-suggested-outgoing {
+  background: oklch(0.38 0.15 30) !important;
+  border-color: oklch(0.6 0.2 30) !important;
+  box-shadow: 0 0 8px oklch(0.5 0.18 30 / 0.5);
+}
+
+/* User has actively chosen this card — solid ring, brighter than the 'suggested' glow */
+.disambiguation-sub-card.user-selected-reentry {
+  border-color: oklch(0.82 0.25 200) !important;
+  background: oklch(0.33 0.13 200) !important;
+  box-shadow: 0 0 0 3px oklch(0.7 0.24 200);
+}
+
+.disambiguation-sub-card.user-selected-outgoing {
+  border-color: oklch(0.82 0.25 30);
+  background: oklch(0.33 0.11 30);
+  box-shadow: 0 0 0 3px oklch(0.7 0.24 30);
+}
+
+.btn-user-selected {
+  background: oklch(0.56 0.23 200) !important;
+  border-color: oklch(0.8 0.25 200) !important;
+  color: oklch(0.98 0 0) !important;
+  font-weight: 700;
+}
+
+.btn-user-selected-outgoing {
+  background: oklch(0.56 0.23 30) !important;
+  border-color: oklch(0.8 0.25 30) !important;
+  color: oklch(0.98 0 0) !important;
+  font-weight: 700;
+}
+
+.disambiguation-keep-new-btn.keep-new-selected {
+  background: oklch(0.36 0.1 140);
+  border-color: oklch(0.65 0.18 140);
+  color: oklch(0.96 0 0);
+  font-weight: 700;
+}
+
+.reentry-sub-card {
+  border-color: oklch(0.5 0.15 200) !important;
+  background: oklch(0.24 0.06 200) !important;
+}
+
+.sub-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sub-card-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: oklch(0.92 0 0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub-card-detail {
+  font-size: 0.76rem;
+  color: oklch(0.6 0 0);
+}
+
+.oldest-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: oklch(0.48 0.14 30);
+  color: oklch(0.95 0 0);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 0.1rem;
+  align-self: flex-start;
+}
+
+.sub-card-action-btn {
+  flex-shrink: 0;
+  padding: 0.4rem 0.85rem;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid;
+}
+
+.outgoing-action-btn {
+  background: oklch(0.27 0.07 15);
+  border-color: oklch(0.5 0.2 15);
+  color: oklch(0.92 0 0);
+}
+
+.outgoing-action-btn:hover:not(:disabled) {
+  background: oklch(0.34 0.1 15);
+  transform: translateY(-1px);
+}
+
+.reentry-action-btn {
+  background: oklch(0.27 0.07 200);
+  border-color: oklch(0.5 0.18 200);
+  color: oklch(0.92 0 0);
+}
+
+.reentry-action-btn:hover:not(:disabled) {
+  background: oklch(0.34 0.1 200);
+  transform: translateY(-1px);
+}
+
+.btn-claimed {
+  background: oklch(0.22 0.02 0) !important;
+  border-color: oklch(0.35 0.02 0) !important;
+  color: oklch(0.45 0 0) !important;
+  cursor: not-allowed !important;
+  font-style: italic;
+}
+
+.disambiguation-keep-new-btn {
+  margin-top: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: oklch(0.24 0.02 275);
+  border: 1px solid oklch(0.4 0.06 275);
+  border-radius: 6px;
+  color: oklch(0.72 0 0);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.disambiguation-keep-new-btn:hover {
+  background: oklch(0.3 0.04 275);
+  color: oklch(0.92 0 0);
+  border-color: oklch(0.52 0.1 275);
+}
+
+.disambiguation-ok-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: oklch(0.55 0.18 145);
+  border: none;
+  border-radius: 6px;
+  color: oklch(0.98 0 0);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.disambiguation-ok-btn:hover:not(:disabled) {
+  background: oklch(0.62 0.2 145);
+  box-shadow: 0 2px 8px rgba(0, 200, 100, 0.3);
+}
+
+.disambiguation-ok-btn:disabled {
+  background: oklch(0.28 0.02 145);
+  color: oklch(0.5 0 0);
+  cursor: not-allowed;
 }
 
 .confidence-badge {
@@ -1171,6 +1938,77 @@ const getFreshnessColor = (score) => {
   font-weight: 500;
   color: oklch(0.9 0 0);
   font-size: 1rem;
+}
+
+/* Spoilage rate row */
+.spoilage-rate-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+.spoilage-rate-row:hover {
+  background-color: oklch(0.2 0 0);
+  border-radius: 4px;
+}
+
+.spoilage-rate-value {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.expand-icon {
+  font-size: 0.7rem;
+  color: oklch(0.6 0 0);
+}
+
+/* Spoilage factor breakdown panel */
+.spoilage-breakdown {
+  background-color: oklch(0.13 0 0);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.breakdown-row {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  gap: 0.5rem;
+}
+
+.breakdown-label {
+  color: oklch(0.7 0 0);
+  flex-shrink: 0;
+}
+
+.breakdown-value {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-left: auto;
+  text-align: right;
+}
+
+.factor-good  { color: oklch(0.75 0.18 145); }  /* green */
+.factor-warn  { color: oklch(0.78 0.18 75);  }  /* amber */
+.factor-bad   { color: oklch(0.65 0.22 25);  }  /* red   */
+
+.factor-note {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  opacity: 0.85;
+  text-align: right;
+  margin-top: 0.1rem;
+}
+
+.temp-abuse-line {
+  color: oklch(0.72 0.12 55);
+  font-size: 0.8rem;
+  margin-top: 0.25rem !important;
 }
 
 /* Edit Mode Styles */
@@ -1575,6 +2413,11 @@ const getFreshnessColor = (score) => {
     gap: 1.25rem;
   }
 
+  .disambiguation-row {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+
   .controls-container {
     flex-wrap: wrap;
     /* gap: 1rem; */
@@ -1589,6 +2432,11 @@ const getFreshnessColor = (score) => {
 /* Responsive Design - Mobile */
 @media (max-width: 768px) {
   .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .disambiguation-row {
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
@@ -1665,6 +2513,15 @@ const getFreshnessColor = (score) => {
   .cards-grid {
     grid-template-columns: 1fr;
     gap: 0.75rem;
+  }
+
+  .disambiguation-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .disambiguation-card {
+    grid-column: span 1;
   }
 
   .card-item h3 {

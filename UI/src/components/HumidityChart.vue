@@ -12,6 +12,27 @@
         </div>
         <div class="chart-content">
           <svg :viewBox="`0 0 ${viewBoxWidth} ${viewBoxHeight}`" preserveAspectRatio="none">
+            <!-- Optimal fridge humidity band: 30–60% -->
+            <rect
+              v-if="optimalBand.height > 0"
+              x="0"
+              :y="optimalBand.y"
+              :width="viewBoxWidth"
+              :height="optimalBand.height"
+              fill="rgba(0,200,100,0.10)"
+            />
+            <line
+              v-if="optimalBand.height > 0"
+              x1="0" :y1="optimalBand.y"
+              :x2="viewBoxWidth" :y2="optimalBand.y"
+              stroke="rgba(0,200,100,0.45)" stroke-width="1.5" stroke-dasharray="6,4"
+            />
+            <line
+              v-if="optimalBand.height > 0"
+              x1="0" :y1="optimalBand.y + optimalBand.height"
+              :x2="viewBoxWidth" :y2="optimalBand.y + optimalBand.height"
+              stroke="rgba(0,200,100,0.45)" stroke-width="1.5" stroke-dasharray="6,4"
+            />
             <!-- Humidity line -->
             <polyline
               :points="humidityPoints"
@@ -52,6 +73,10 @@ const props = defineProps({
 const viewBoxWidth = 1000
 const viewBoxHeight = 150
 
+// Optimal fridge humidity range
+const OPTIMAL_HUMIDITY_MIN = 30
+const OPTIMAL_HUMIDITY_MAX = 60
+
 // Calculate min and max humidity for scaling
 const minHumidity = computed(() => {
   if (props.data.length === 0) return 0
@@ -86,6 +111,19 @@ const humidityData = computed(() => {
 // Create polyline points string
 const humidityPoints = computed(() => {
   return humidityData.value.map(point => `${point.x},${point.y}`).join(' ')
+})
+
+// SVG rect for the optimal humidity band
+const optimalBand = computed(() => {
+  const clampedMax = Math.min(OPTIMAL_HUMIDITY_MAX, maxHumidity.value)
+  const clampedMin = Math.max(OPTIMAL_HUMIDITY_MIN, minHumidity.value)
+  if (clampedMin >= clampedMax) return { y: 0, height: 0 }
+  const yTop    = viewBoxHeight - ((clampedMax - minHumidity.value) / humidityRange.value) * viewBoxHeight
+  const yBottom = viewBoxHeight - ((clampedMin - minHumidity.value) / humidityRange.value) * viewBoxHeight
+  return {
+    y:      Math.max(0, yTop),
+    height: Math.max(0, Math.min(viewBoxHeight, yBottom) - Math.max(0, yTop))
+  }
 })
 
 const formatTime = (timestamp) => {

@@ -5,7 +5,9 @@ Reads serial data from ESP32 over Bluetooth (BluetoothSerial / RFCOMM)
 
 import re
 import threading
+import time
 import serial  # pyserial
+import serial.tools.list_ports
 
 
 class SensorInterface:
@@ -28,16 +30,17 @@ class SensorInterface:
         "humidity":    re.compile(r">Humidity:([\d.]+)"),
     }
 
-    def __init__(self, port: str = "COM3", baudrate: int = 115200):
+    def __init__(self, port: str | None = "COM5", baudrate: int = 115200):
         """
         Initialize sensor interface.
 
         Args:
-            port:     COM port of the paired Bluetooth device (e.g. 'COM3' on Windows)
-            baudrate: Must match BluetoothSerial – typically ignored for BT but kept
-                      for compatibility when switching to wired UART.
+            port:     Preferred COM port (hint only — all available ports are
+                      swept if this one fails or is None).
+            baudrate: Must match BluetoothSerial – typically ignored for BT but
+                      kept for compatibility when switching to wired UART.
         """
-        self._port = port
+        self._preferred_port = port
         self._baudrate = baudrate
         self._is_connected = False
         self._serial: serial.Serial | None = None
@@ -48,7 +51,11 @@ class SensorInterface:
         self._pressure: float = 1013.25
         self._altitude: float = 0.0
         self._mq_readings: dict[int, int] = {}
+        self._mq_raw_readings: dict[int, int] = {}
+        self._has_temperature = False
+        self._has_humidity = False
 
+        self._last_data_received: float = 0.0   # epoch time of last valid parse
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._running = False
@@ -57,51 +64,216 @@ class SensorInterface:
     # Connection management
     # ------------------------------------------------------------------
 
+    # Seconds of silence before declaring the connection dead
+    _STALE_TIMEOUT: float = 15.0
+    # Seconds between port-sweep retries when disconnected
+    _RECONNECT_INTERVAL: float = 5.0
+    # Seconds to wait for valid sensor lines when probing a candidate port.
+    # Must be long enough to cover Bluetooth RFCOMM handshake (~3-5 s) plus
+    # enough reads to hit _PORT_PROBE_MIN_LINES.
+    _PORT_PROBE_TIMEOUT: float = 10.0
+    # Seconds to wait after opening a port before starting the probe read loop.
+    # Bluetooth serial (RFCOMM) needs time to complete the connection handshake
+    # before data starts flowing; skipping this causes the probe to burn through
+    # its timeout on empty reads.
+    _PORT_SETTLE_DELAY: float = 3.0
+    # Number of valid lines required during probe before declaring connected.
+    # 1 is sufficient because reset_input_buffer() already discards any stale
+    # BT serial buffer bytes before the probe read loop starts, so the first
+    # matching line is guaranteed to be a live transmission.
+    _PORT_PROBE_MIN_LINES: int = 1
+    # Exponential moving average smoothing factor for MQ sensors.
+    # Lower values reduce noise more aggressively, higher values react faster.
+    _MQ_EMA_ALPHA: float = 0.2
+
     def connect(self) -> bool:
         """
-        Open the serial port and start the background reader thread.
-
-        Returns:
-            True if connection succeeded, False otherwise.
+        Start the persistent background connection/reader thread.
+        Returns True if a connection is already established; the actual
+        first-connect happens asynchronously in the background.
         """
-        try:
-            self._serial = serial.Serial(self._port, self._baudrate, timeout=1)
-            self._is_connected = True
-            self._running = True
-            self._thread = threading.Thread(target=self._read_loop, daemon=True)
-            self._thread.start()
-            return True
-        except serial.SerialException as e:
-            print(f"[SensorInterface] Failed to connect on {self._port}: {e}")
-            self._is_connected = False
-            return False
+        if self._running:
+            return self._is_connected
+        self._running = True
+        self._thread = threading.Thread(target=self._connection_loop, daemon=True)
+        self._thread.start()
+        # Wait long enough to cover the BT settle delay + a few reads.
+        # The background thread continues regardless; this just avoids callers
+        # immediately seeing is_connected() == False on a slow BT start.
+        time.sleep(self._PORT_SETTLE_DELAY + 2.0)
+        return self._is_connected
 
     def disconnect(self) -> None:
-        """Stop the reader thread and close the serial port."""
+        """Stop the background thread and close the serial port."""
         self._running = False
         if self._thread:
-            self._thread.join(timeout=2)
-        if self._serial and self._serial.is_open:
-            self._serial.close()
+            self._thread.join(timeout=3)
+        self._close_serial()
         self._is_connected = False
 
+    def _close_serial(self) -> None:
+        """Close and release the serial port if open."""
+        if self._serial:
+            try:
+                if self._serial.is_open:
+                    self._serial.close()
+            except Exception:
+                pass
+            self._serial = None
+
     # ------------------------------------------------------------------
-    # Background reader
+    # Background connection loop
     # ------------------------------------------------------------------
 
-    def _read_loop(self) -> None:
-        """Continuously read lines from serial and parse them."""
-        while self._running and self._serial and self._serial.is_open:
+    def _connection_loop(self) -> None:
+        """
+        Persistent background loop.
+        — When connected: read and parse lines from the serial port.
+        — When disconnected: sweep available COM ports until one responds.
+        """
+        while self._running:
+            if not self._is_connected:
+                self._sweep_for_connection()
+            else:
+                self._read_line()
+
+    def _get_candidate_ports(self) -> list[str]:
+        """Return COM ports to try, with the preferred port first."""
+        available = [p.device for p in serial.tools.list_ports.comports()]
+        if not self._preferred_port:
+            return available
+        if self._preferred_port in available:
+            available.remove(self._preferred_port)
+            return [self._preferred_port] + available
+        # Preferred not yet listed (e.g. BT pairing still in progress) — try anyway
+        return [self._preferred_port] + available
+
+    def _try_port(self, port: str) -> bool:
+        """
+        Open *port* and wait up to _PORT_PROBE_TIMEOUT seconds for at least
+        _PORT_PROBE_MIN_LINES valid sensor lines.  Requiring multiple lines
+        prevents stale BT serial buffers from causing a false-positive connect.
+        On success, stores the open Serial, parses the collected lines into
+        sensor state, and returns True.  On failure, closes the port and
+        returns False.
+        """
+        try:
+            ser = serial.Serial(port, self._baudrate, timeout=1)
+        except (serial.SerialException, OSError, PermissionError):
+            return False
+
+        # Wait for Bluetooth RFCOMM to complete its handshake before reading.
+        # Without this, readline() returns empty for the first few seconds and
+        # the probe timeout expires before any valid data arrives.
+        settle_end = time.time() + self._PORT_SETTLE_DELAY
+        while time.time() < settle_end:
+            if not self._running:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+                return False
+            time.sleep(0.1)
+
+        # Flush any bytes that accumulated in the input buffer during the settle
+        # delay.  Those bytes are stale BT serial buffer data from before this
+        # connection was opened.  Counting them as "valid lines" would cause a
+        # false-positive probe on a dead link — the first _read_line() would then
+        # immediately raise a SerialException and trigger a re-sweep.
+        try:
+            ser.reset_input_buffer()
+        except Exception:
+            pass
+
+        deadline = time.time() + self._PORT_PROBE_TIMEOUT
+        valid_lines: list[str] = []
+        while time.time() < deadline:
+            if not self._running:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+                return False
             try:
-                raw = self._serial.readline()
-                if not raw:
-                    continue
-                line = raw.decode("utf-8", errors="ignore").strip()
-                self._parse_line(line)
-            except serial.SerialException as e:
-                print(f"[SensorInterface] Serial error: {e}")
-                self._is_connected = False
+                raw = ser.readline()
+                if raw:
+                    line = raw.decode('utf-8', errors='ignore').strip()
+                    if any(p.match(line) for p in self._PATTERNS.values()):
+                        valid_lines.append(line)
+                        if len(valid_lines) >= self._PORT_PROBE_MIN_LINES:
+                            break
+            except (serial.SerialException, OSError):
                 break
+
+        if len(valid_lines) >= self._PORT_PROBE_MIN_LINES:
+            with self._lock:
+                self._serial = ser
+                self._is_connected = True
+                self._last_data_received = time.time()
+            # Parse the lines collected during probe so readings aren't wasted
+            for line in valid_lines:
+                self._parse_line(line)
+            print(f"[SensorInterface] Connected on {port}")
+            return True
+
+        try:
+            ser.close()
+        except Exception:
+            pass
+        return False
+
+    def _sweep_for_connection(self) -> None:
+        """Try every available COM port; sleep and retry if none respond."""
+        candidates = self._get_candidate_ports()
+        if not candidates:
+            print(f"[SensorInterface] No COM ports found — retrying in "
+                  f"{self._RECONNECT_INTERVAL}s")
+            time.sleep(self._RECONNECT_INTERVAL)
+            return
+
+        print(f"[SensorInterface] Sweeping ports: {candidates}")
+        for port in candidates:
+            if not self._running:
+                return
+            if self._try_port(port):
+                return   # Connected — hand back to _connection_loop
+
+        print(f"[SensorInterface] No sensor found on {candidates} — "
+              f"retrying in {self._RECONNECT_INTERVAL}s")
+        time.sleep(self._RECONNECT_INTERVAL)
+
+    def _read_line(self) -> None:
+        """Read one line from the open serial port; mark disconnected on error."""
+        ser = self._serial
+        if ser is None or not ser.is_open:
+            self._mark_disconnected()
+            return
+        try:
+            raw = ser.readline()
+            if not raw:
+                # readline() timed out (1 s configured on port open)
+                if (self._last_data_received > 0 and
+                        time.time() - self._last_data_received > self._STALE_TIMEOUT):
+                    print(f"[SensorInterface] No data for {self._STALE_TIMEOUT}s "
+                          "— disconnecting")
+                    self._mark_disconnected()
+                return
+            line = raw.decode('utf-8', errors='ignore').strip()
+            self._parse_line(line)
+        except (serial.SerialException, OSError, PermissionError) as e:
+            print(f"[SensorInterface] Serial error: {e}")
+            self._mark_disconnected()
+
+    def _mark_disconnected(self) -> None:
+        """Record disconnection, release the serial port, and trigger reconnect."""
+        with self._lock:
+            self._is_connected = False
+            self._has_temperature = False
+            self._has_humidity = False
+            self._mq_raw_readings = {}
+            self._mq_readings = {}
+        self._close_serial()
+        print("[SensorInterface] Disconnected — will attempt reconnect")
 
     def _parse_line(self, line: str) -> None:
         """
@@ -113,20 +285,32 @@ class SensorInterface:
         with self._lock:
             if m := self._PATTERNS["temperature"].match(line):
                 self._temperature = float(m.group(1))
-
+                self._has_temperature = True
+                self._last_data_received = time.time()
             elif m := self._PATTERNS["humidity"].match(line):
                 self._humidity = float(m.group(1))
-
+                self._has_humidity = True
+                self._last_data_received = time.time()
             elif m := self._PATTERNS["pressure"].match(line):
                 self._pressure = float(m.group(1))
-
+                self._last_data_received = time.time()
             elif m := self._PATTERNS["altitude"].match(line):
                 self._altitude = float(m.group(1))
-
+                self._last_data_received = time.time()
             elif m := self._PATTERNS["mq"].match(line):
                 sensor_id = int(m.group(1))
                 value = int(m.group(2))
-                self._mq_readings[sensor_id] = value
+                self._mq_raw_readings[sensor_id] = value
+                previous = self._mq_readings.get(sensor_id)
+                if previous is None:
+                    filtered = value
+                else:
+                    filtered = round(
+                        self._MQ_EMA_ALPHA * value +
+                        (1 - self._MQ_EMA_ALPHA) * previous
+                    )
+                self._mq_readings[sensor_id] = filtered
+                self._last_data_received = time.time()
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -154,20 +338,31 @@ class SensorInterface:
 
     def get_mq_reading(self, sensor_id: int) -> int | None:
         """
-        Returns the latest millivolt reading for a given MQ sensor ID.
+        Returns the latest smoothed millivolt reading for a given MQ sensor ID.
 
         Args:
             sensor_id: Sensor ID as mapped in main.cpp sensorMapping[]
                        (e.g. 2, 3, 4, 5, 8, 9, 135)
         Returns:
-            Reading in mV, or None if not yet received.
+            Smoothed reading in mV, or None if not yet received.
         """
         with self._lock:
             return self._mq_readings.get(sensor_id)
 
     def is_connected(self) -> bool:
-        """Returns True if the serial port is open and receiving data."""
-        return self._is_connected
+        """Returns True if the serial port is open AND data arrived recently."""
+        if not self._is_connected:
+            return False
+        # If the flag is still True but nothing has come in for a while,
+        # treat it as disconnected (BT drop without raising an exception).
+        stale = (self._last_data_received > 0 and
+                 time.time() - self._last_data_received > self._STALE_TIMEOUT)
+        return not stale
+
+    def has_environment_data(self) -> bool:
+        """Returns True once live temperature and humidity readings were received."""
+        with self._lock:
+            return self.is_connected() and self._has_temperature and self._has_humidity
 
 
 # ------------------------------------------------------------------
@@ -177,7 +372,7 @@ class SensorInterface:
 _global_sensor: SensorInterface | None = None
 
 
-def get_sensor(port: str = "COM3") -> SensorInterface:
+def get_sensor(port: str = "COM5") -> SensorInterface:
     """
     Get (or create) the global SensorInterface instance.
 

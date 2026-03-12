@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadFoodsFromCSV } from '../utils/csvParser'
 import { getSensorData } from '../utils/sensorApi'
-import { getWasteHistory } from '../utils/statsApi'
+import { getWasteHistory, getTemperatureHistory } from '../utils/statsApi'
 
 const router = useRouter()
 
@@ -21,6 +21,13 @@ const sensorConnected = ref(false)
 const wasteHistory = ref([])
 const recipes = ref([])
 const loadingRecipes = ref(false)
+const temperatureHistory = ref([])
+
+const SAFE_TEMP_MIN = 1
+const SAFE_TEMP_MAX = 8
+const SAFE_HUMIDITY_MIN = 20
+const SAFE_HUMIDITY_MAX = 95
+const ENV_ALERT_MIN_MINUTES = 10
 
 const wasteReduced = computed(() => {
   const last7Days = wasteHistory.value.slice(-7)
@@ -47,7 +54,7 @@ const lowestFreshnessFoods = computed(() => {
 })
 
 // Generate alerts based on food conditions
-const alerts = computed(() => {
+const foodAlerts = computed(() => {
   const alertList = []
   
   foods.value.forEach(food => {
@@ -90,6 +97,93 @@ const alerts = computed(() => {
   return alertList
 })
 
+const formatDuration = (minutes) => {
+  if (minutes < 60) return `${Math.round(minutes)} min`
+  const hours = Math.floor(minutes / 60)
+  const mins = Math.round(minutes % 60)
+  if (mins === 0) return `${hours}h`
+  return `${hours}h ${mins}m`
+}
+
+const formatDeviation = (amount, unit) => {
+  return `${amount.toFixed(1)}${unit}`
+}
+
+const summarizeOutOfRange = (entries, key, min, max) => {
+  if (!entries.length) return null
+
+  let totalMinutes = 0
+  let maxDeviation = 0
+  let direction = ''
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const current = entries[i]
+    const value = current[key]
+    if (value == null) continue
+
+    let deviation = 0
+    let sampleDirection = ''
+    if (value < min) {
+      deviation = min - value
+      sampleDirection = 'below'
+    } else if (value > max) {
+      deviation = value - max
+      sampleDirection = 'above'
+    }
+
+    if (deviation <= 0) continue
+
+    maxDeviation = Math.max(maxDeviation, deviation)
+    if (!direction || deviation >= maxDeviation) {
+      direction = sampleDirection
+    }
+
+    if (i < entries.length - 1) {
+      const currentTs = new Date(current.timestamp)
+      const nextTs = new Date(entries[i + 1].timestamp)
+      const deltaMinutes = Math.max(0, (nextTs - currentTs) / 60000)
+      totalMinutes += deltaMinutes
+    }
+  }
+
+  if (totalMinutes < ENV_ALERT_MIN_MINUTES) return null
+
+  return { totalMinutes, maxDeviation, direction }
+}
+
+const environmentAlerts = computed(() => {
+  const entries = [...temperatureHistory.value].sort(
+    (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+  )
+
+  const tempSummary = summarizeOutOfRange(entries, 'temperature', SAFE_TEMP_MIN, SAFE_TEMP_MAX)
+  const humiditySummary = summarizeOutOfRange(entries, 'humidity', SAFE_HUMIDITY_MIN, SAFE_HUMIDITY_MAX)
+
+  const result = []
+
+  if (tempSummary) {
+    result.push({
+      type: 'critical',
+      category: 'environment',
+      message: `Temperature was outside the safe range for ${formatDuration(tempSummary.totalMinutes)} in the last 12 hours, peaking ${tempSummary.direction} the limit by ${formatDeviation(tempSummary.maxDeviation, '°C')}.`,
+      details: `Safe range: ${SAFE_TEMP_MIN}-${SAFE_TEMP_MAX}°C`
+    })
+  }
+
+  if (humiditySummary) {
+    result.push({
+      type: 'warning',
+      category: 'environment',
+      message: `Humidity was outside the safe range for ${formatDuration(humiditySummary.totalMinutes)} in the last 12 hours, peaking ${humiditySummary.direction} the limit by ${formatDeviation(humiditySummary.maxDeviation, '%')}.`,
+      details: `Safe range: ${SAFE_HUMIDITY_MIN}-${SAFE_HUMIDITY_MAX}%`
+    })
+  }
+
+  return result
+})
+
+const alerts = computed(() => [...environmentAlerts.value, ...foodAlerts.value])
+
 const handleFoodClick = (foodId) => {
   console.log(`Food ${foodId} clicked`)
 }
@@ -115,6 +209,11 @@ const getFreshnessColor = (score) => {
   if (score > 59 && score <= 84) return '#ADFF2F' // Yellow-green (lighter and more yellow)
   if (score > 84) return '#228B22' // Forest green (lighter than dark green)
   return '#D3D3D3' // Default gray
+}
+
+const getReadingStatusColor = (value, min, max, connected) => {
+  if (!connected) return 'oklch(0.6 0 0)'
+  return value >= min && value <= max ? '#228B22' : '#8B0000'
 }
 
 const navigateToInventory = () => {
@@ -143,6 +242,7 @@ let greetingInterval
 let foodsUpdateInterval
 let sensorUpdateInterval
 let historyUpdateInterval
+let temperatureHistoryUpdateInterval
 
 const handleFoodAdded = async () => {
   // Refresh foods list when a new item is added via global scanner
@@ -164,6 +264,7 @@ onMounted(async () => {
   
   // Fetch initial history data
   wasteHistory.value = await getWasteHistory()
+  temperatureHistory.value = await getTemperatureHistory()
   
   // Load recipes from localStorage (no API calls)
   // Recipes are cached by the Recipes page
@@ -208,6 +309,10 @@ onMounted(async () => {
   historyUpdateInterval = setInterval(async () => {
     wasteHistory.value = await getWasteHistory()
   }, 30000)
+
+  temperatureHistoryUpdateInterval = setInterval(async () => {
+    temperatureHistory.value = await getTemperatureHistory()
+  }, 30000)
 })
 
 onUnmounted(() => {
@@ -217,6 +322,7 @@ onUnmounted(() => {
   clearInterval(foodsUpdateInterval)
   clearInterval(sensorUpdateInterval)
   clearInterval(historyUpdateInterval)
+  clearInterval(temperatureHistoryUpdateInterval)
 })
 </script>
 
@@ -256,11 +362,11 @@ onUnmounted(() => {
         </div>
         <div class="reading-item">
           <span class="reading-label">Temperature</span>
-          <span class="reading-value">{{ sensorConnected ? temperature.toFixed(1) + '°C' : '--' }}</span>
+          <span class="reading-value" :style="{ color: getReadingStatusColor(temperature, SAFE_TEMP_MIN, SAFE_TEMP_MAX, sensorConnected) }">{{ sensorConnected ? temperature.toFixed(1) + '°C' : '--' }}</span>
         </div>
         <div class="reading-item">
           <span class="reading-label">Humidity</span>
-          <span class="reading-value">{{ sensorConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
+          <span class="reading-value" :style="{ color: getReadingStatusColor(humidity, SAFE_HUMIDITY_MIN, SAFE_HUMIDITY_MAX, sensorConnected) }">{{ sensorConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
         </div>
         <div class="reading-item">
           <span class="reading-label">Waste Reduced</span>
@@ -342,9 +448,14 @@ onUnmounted(() => {
             <div class="alert-content">
               <p class="alert-message">{{ alert.message }}</p>
               <div class="alert-details">
-                <span>Freshness: {{ Math.round(alert.food.freshnessScore) }}/100</span>
-                <span>•</span>
-                <span>Days left: {{ alert.food.daysUntilSpoilage }}</span>
+                <template v-if="alert.food">
+                  <span>Freshness: {{ Math.round(alert.food.freshnessScore) }}/100</span>
+                  <span>•</span>
+                  <span>Days left: {{ alert.food.daysUntilSpoilage }}</span>
+                </template>
+                <template v-else-if="alert.details">
+                  <span>{{ alert.details }}</span>
+                </template>
               </div>
             </div>
           </div>

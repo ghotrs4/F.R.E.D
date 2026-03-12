@@ -2,9 +2,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getSensorData } from '../utils/sensorApi'
 import { loadFoodsFromCSV } from '../utils/csvParser'
-import { getWasteHistory, getTemperatureHistory } from '../utils/statsApi'
+import { getWasteHistory, getTemperatureHistory, getMqHistory } from '../utils/statsApi'
 import TemperatureChart from './TemperatureChart.vue'
 import HumidityChart from './HumidityChart.vue'
+import MqChart from './MqChart.vue'
 
 defineProps({
   msg: String,
@@ -17,11 +18,18 @@ const sensorsConnected = ref(false)
 const foods = ref([])
 const wasteHistory = ref([])
 const temperatureHistory = ref([])
+const mqHistory = ref([])
+
+const SAFE_TEMP_MIN = 1
+const SAFE_TEMP_MAX = 8
+const SAFE_HUMIDITY_MIN = 20
+const SAFE_HUMIDITY_MAX = 95
 
 let sensorUpdateInterval
 let foodsUpdateInterval
 let historyUpdateInterval
 let temperatureUpdateInterval
+let mqUpdateInterval
 
 // Computed statistics
 const totalItems = computed(() => foods.value.length)
@@ -74,6 +82,11 @@ const wasteReduced = computed(() => {
   return Math.round((totalConsumed / total) * 100)
 })
 
+const getReadingStatusColor = (value, min, max, connected) => {
+  if (!connected) return 'oklch(0.6 0 0)'
+  return value >= min && value <= max ? '#228B22' : '#8B0000'
+}
+
 onMounted(async () => {
   // Fetch initial sensor data
   const sensorData = await getSensorData()
@@ -96,7 +109,7 @@ onMounted(async () => {
     temperature.value = sensorData.temperature
     humidity.value = sensorData.humidity
     sensorsConnected.value = sensorData.connected
-  }, 5000)
+  }, 500)
   
   // Poll for food data updates every 3 seconds
   foodsUpdateInterval = setInterval(async () => {
@@ -111,10 +124,18 @@ onMounted(async () => {
     wasteHistory.value = await getWasteHistory()
   }, 30000)
   
-  // Poll for temperature history updates every 30 seconds
+  // Poll for temperature history updates every 5 seconds
   temperatureUpdateInterval = setInterval(async () => {
     temperatureHistory.value = await getTemperatureHistory()
-  }, 30000)
+  }, 5000)
+
+  // Fetch initial MQ history
+  mqHistory.value = await getMqHistory()
+
+  // Poll for MQ history updates every 5 seconds
+  mqUpdateInterval = setInterval(async () => {
+    mqHistory.value = await getMqHistory()
+  }, 5000)
 })
 
 onUnmounted(() => {
@@ -122,6 +143,7 @@ onUnmounted(() => {
   clearInterval(foodsUpdateInterval)
   clearInterval(historyUpdateInterval)
   clearInterval(temperatureUpdateInterval)
+  clearInterval(mqUpdateInterval)
 })
 </script>
 
@@ -139,7 +161,7 @@ onUnmounted(() => {
             <div class="reading-icon">🌡️</div>
             <div class="reading-content">
               <span class="reading-label">Temperature</span>
-              <span class="reading-value-large">{{ sensorsConnected ? temperature.toFixed(1) + '°C' : '--' }}</span>
+              <span class="reading-value-large" :style="{ color: getReadingStatusColor(temperature, SAFE_TEMP_MIN, SAFE_TEMP_MAX, sensorsConnected) }">{{ sensorsConnected ? temperature.toFixed(1) + '°C' : '--' }}</span>
             </div>
           </div>
           <TemperatureChart :data="temperatureHistory" />
@@ -149,11 +171,21 @@ onUnmounted(() => {
             <div class="reading-icon">💧</div>
             <div class="reading-content">
               <span class="reading-label">Humidity</span>
-              <span class="reading-value-large">{{ sensorsConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
+              <span class="reading-value-large" :style="{ color: getReadingStatusColor(humidity, SAFE_HUMIDITY_MIN, SAFE_HUMIDITY_MAX, sensorsConnected) }">{{ sensorsConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
             </div>
           </div>
           <HumidityChart :data="temperatureHistory" />
         </div>
+      </div>
+      <div class="reading-with-chart">
+        <div class="reading-large">
+          <div class="reading-icon">🧪</div>
+          <div class="reading-content">
+            <span class="reading-label">Gas Sensors (MQ)</span>
+            <span class="reading-value-large" style="font-size: 1rem;">{{ sensorsConnected ? 'Active' : '--' }}</span>
+          </div>
+        </div>
+        <MqChart :data="mqHistory" />
       </div>
       <div class="sensor-status">
         <span class="status-indicator" :class="{ active: sensorsConnected, disconnected: !sensorsConnected }"></span>
@@ -335,6 +367,7 @@ onUnmounted(() => {
   padding: 0.75rem 1rem;
   background-color: oklch(0.15 0 0);
   border-radius: 6px;
+  margin-top: 1rem;
 }
 
 .status-indicator {

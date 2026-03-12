@@ -17,6 +17,21 @@ const showRejectConfirm = ref(false)
 const detectedItems = ref([])
 const selectedItem = ref(null)
 const isClassifying = ref(false)
+const imageBlobCache = ref({})    // food name (lowercase) -> Blob, for in-session compare
+const localResultCache = ref({})  // food name (lowercase) -> local model result, for in-session compare
+const outgoingItems = ref([])
+
+// Persist disambiguation items in sessionStorage so they survive page reloads.
+// These are never written to the DB until the user resolves them, so without
+// sessionStorage they would be lost on F5 / Ctrl+R.
+const _savedDisambiguations = (() => {
+  try { return JSON.parse(sessionStorage.getItem('fred_disambiguations') || '[]') } catch { return [] }
+})()
+const disambiguationItems = ref(_savedDisambiguations)
+
+watch(disambiguationItems, (val) => {
+  try { sessionStorage.setItem('fred_disambiguations', JSON.stringify(val)) } catch {}
+}, { deep: true })
 
 // Helper function to capitalize food names properly
 const capitalizeFoodName = (name) => {
@@ -47,9 +62,17 @@ const loadPendingItems = async () => {
         expiration_date: food.expirationDate,
         time_in_fridge: food.timeInFridge,
         days_until_spoilage: food.daysUntilSpoilage,
+        freshness_score: food.freshnessScore,
         confidence: food.confidence || 95,
         top5: food.top5Predictions || [],
-        timestamp: new Date().toLocaleTimeString()
+        timestamp: new Date().toLocaleTimeString(),
+        isReentry: food.status === 'pending_reentry',
+        entry_date: food.entryDate || '',
+        description: food.description || '',
+        safety_category: food.safetyCategory || '',
+        warnings: food.warnings || [],
+        cumulative_temp_abuse: food.cumulativeTempAbuse ?? 0,
+        environment_alerts: food.environmentAlerts || []
       }))
     }
   } catch (error) {
@@ -57,6 +80,33 @@ const loadPendingItems = async () => {
   }
 }
 
+const loadOutgoingItems = async () => {
+  try {
+    const response = await fetch('http://localhost:5000/api/foods/outgoing')
+    if (response.ok) {
+      const outgoingFoods = await response.json()
+      outgoingItems.value = outgoingFoods.map(food => ({
+        id: food.id,
+        name: food.name,
+        foodGroup: food.foodGroup,
+        packagingType: food.packagingType,
+        storageLocation: food.storageLocation,
+        expirationDate: food.expirationDate,
+        freshnessScore: food.freshnessScore,
+        daysUntilSpoilage: food.daysUntilSpoilage,
+        timeInFridge: food.timeInFridge,
+        entryDate: food.entryDate || '',
+        description: food.description || '',
+        safetyCategory: food.safetyCategory || '',
+        warnings: food.warnings || [],
+        cumulativeTempAbuse: food.cumulativeTempAbuse ?? 0,
+        environmentAlerts: food.environmentAlerts || []
+      }))
+    }
+  } catch (error) {
+    console.error('Error loading outgoing items:', error)
+  }
+}
 
 
 const openCameraPopup = () => {
@@ -71,7 +121,7 @@ const handleFinishScanning = async (items) => {
   showCameraPopup.value = false
   
   if (items.length === 0) {
-    alert('No food items were detected. Please try again.')
+    // alert('No food items were detected. Please try again.')
     return
   }
   
@@ -80,10 +130,38 @@ const handleFinishScanning = async (items) => {
     ...item,
     predicted_class: capitalizeFoodName(item.predicted_class)
   }))
-  
-  // Save items to database with 'pending' status
+
+  // Cache blobs and local model results keyed by food name for the comparison panel
+  for (const item of newItems) {
+    if (item.imageBlob) {
+      imageBlobCache.value[item.predicted_class.toLowerCase()] = item.imageBlob
+    }
+    if (item.local_result !== undefined) {
+      localResultCache.value[item.predicted_class.toLowerCase()] = item.local_result
+    }
+  }
+
+  // Save items to database with 'pending' status.
+  // We track which confirmed/removed IDs are already claimed by disambiguation
+  // cards created earlier in this loop, so duplicate scans of the same item
+  // don't all get the same disambiguation card.
   for (const item of newItems) {
     try {
+      // Build claimed-ID sets from disambiguation cards accumulated so far
+      // (both from previous sessions and from earlier iterations of this loop).
+      // A slot is only "claimed" if it has been actively SELECTED by a card —
+      // i.e. mark_outgoing(X) claims confirmed slot X, mark_reentry(Y) claims
+      // removed slot Y.  Merely appearing in a card's match list does NOT claim
+      // the slot, so the second scan of the same item can still get its own card
+      // for the unclaimed slot (e.g. the confirmed item when the first card
+      // defaulted to mark_reentry for the removed item).
+      const claimedConfirmedIds = disambiguationItems.value
+        .filter(d => d.selectedAction === 'mark_outgoing' && d.selectedTargetId)
+        .map(d => d.selectedTargetId)
+      const claimedRemovedIds = disambiguationItems.value
+        .filter(d => d.selectedAction === 'mark_reentry' && d.selectedTargetId)
+        .map(d => d.selectedTargetId)
+
       const payload = {
         name: item.predicted_class,
         foodGroup: item.category,
@@ -93,7 +171,11 @@ const handleFinishScanning = async (items) => {
         status: 'pending',
         confidence: item.confidence,
         top5Predictions: item.top5,
-        daysUntilSpoilage: parseInt(item.spoilage_prediction) || 7
+        daysUntilSpoilage: parseInt(item.spoilage_parameters?.shelf_life_days) || 7,
+        geminiSpoilageParams: item.spoilage_parameters || null,
+        description: item.description || '',
+        claimed_confirmed_ids: [...new Set(claimedConfirmedIds)],
+        claimed_removed_ids: [...new Set(claimedRemovedIds)]
       }
       
       const response = await fetch('http://localhost:5000/api/foods', {
@@ -104,7 +186,22 @@ const handleFinishScanning = async (items) => {
         body: JSON.stringify(payload)
       })
       
-      if (!response.ok) {
+      if (response.ok) {
+        const result = await response.json()
+        if (result.disambiguation) {
+          // Don't write to DB yet — hold in memory until user resolves
+          const defReentry = result.defaultReentryId || null
+          const defOutgoing = result.defaultOutgoingId || null
+          disambiguationItems.value.push({
+            id: `disambiguation-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            ...result,
+            scanData: payload,
+            selectedAction: defReentry ? 'mark_reentry' : defOutgoing ? 'mark_outgoing' : null,
+            selectedTargetId: defReentry || defOutgoing || null
+          })
+        }
+        // matched / reentry / new pending: handled by loadPendingItems/loadOutgoingItems below
+      } else {
         console.error('Failed to save pending item:', item.predicted_class)
       }
     } catch (error) {
@@ -114,6 +211,7 @@ const handleFinishScanning = async (items) => {
   
   // Reload all pending items from database (merges existing + new)
   await loadPendingItems()
+  await loadOutgoingItems()
   
   // Navigate to inventory page to show pending items
   router.push('/inventory')
@@ -136,7 +234,11 @@ const closeResultsPopup = () => {
 }
 
 const handleViewPendingItem = (item) => {
-  selectedItem.value = item
+  selectedItem.value = {
+    ...item,
+    imageBlob: imageBlobCache.value[item.predicted_class?.toLowerCase()] ?? null,
+    localResult: localResultCache.value[item.predicted_class?.toLowerCase()] ?? null
+  }
   showResultsPopup.value = true
 }
 
@@ -183,9 +285,9 @@ const handleConfirm = async (updatedData) => {
           }
           return i
         })
-        // Update selectedItem to reference the new object
+        // Update selectedItem to reference the new object (preserve blob for compare)
         if (updatedItem) {
-          selectedItem.value = updatedItem
+          selectedItem.value = { ...updatedItem, imageBlob: selectedItem.value?.imageBlob ?? null }
         }
         // Don't reload from database to preserve AI scan data
       } else {
@@ -223,25 +325,145 @@ const handleRemovePendingItem = async () => {
   closeResultsPopup()
 }
 
+const handleSwitchToIncoming = async (itemId) => {
+  try {
+    const response = await fetch(`http://localhost:5000/api/foods/${itemId}/switch-to-incoming`, {
+      method: 'POST'
+    })
+    if (response.ok) {
+      // Reload both: outgoing item reverts to confirmed, pending item now appears
+      await Promise.all([loadOutgoingItems(), loadPendingItems()])
+    } else {
+      console.error('Failed to switch item to incoming')
+    }
+  } catch (error) {
+    console.error('Error switching item to incoming:', error)
+  }
+}
+
+const handleMarkAsNew = async (itemId) => {
+  try {
+    const response = await fetch(`http://localhost:5000/api/foods/${itemId}/mark-as-new`, {
+      method: 'POST'
+    })
+    if (response.ok) {
+      await loadPendingItems()
+    } else {
+      console.error('Failed to mark item as new')
+    }
+  } catch (error) {
+    console.error('Error marking item as new:', error)
+  }
+}
+
+const handleResolveDisambiguation = (disambiguationId, action, targetId) => {
+  const idx = disambiguationItems.value.findIndex(d => d.id === disambiguationId)
+  if (idx === -1) return
+  // Replace the object so Vue's deep watcher reliably detects the change
+  disambiguationItems.value[idx] = {
+    ...disambiguationItems.value[idx],
+    selectedAction: action,
+    selectedTargetId: targetId
+  }
+
+  // Cross-card coherence: when a sibling card has the same target selected,
+  // deselect it so the same slot can't be claimed by two cards simultaneously.
+  // (The user chose this slot here, so siblings should revert to unselected.)
+  if (action === 'mark_outgoing' && targetId) {
+    disambiguationItems.value = disambiguationItems.value.map((d, i) => {
+      if (i === idx) return d
+      if (d.selectedAction === 'mark_outgoing' && d.selectedTargetId === targetId) {
+        return { ...d, selectedAction: null, selectedTargetId: null }
+      }
+      return d
+    })
+  } else if (action === 'mark_reentry' && targetId) {
+    disambiguationItems.value = disambiguationItems.value.map((d, i) => {
+      if (i === idx) return d
+      if (d.selectedAction === 'mark_reentry' && d.selectedTargetId === targetId) {
+        return { ...d, selectedAction: null, selectedTargetId: null }
+      }
+      return d
+    })
+  }
+}
+
+// For each disambiguation card, compute which of its option IDs are already
+// selected (confirmed or pending OK) by a *sibling* card.
+// Shape: { [cardId]: { confirmedIds: Set<string>, removedIds: Set<string> } }
+const claimedByOthers = computed(() => {
+  const result = {}
+  for (const card of disambiguationItems.value) {
+    const claimedConfirmed = new Set()
+    const claimedRemoved = new Set()
+    for (const sibling of disambiguationItems.value) {
+      if (sibling.id === card.id) continue
+      if (sibling.selectedAction === 'mark_outgoing' && sibling.selectedTargetId) {
+        claimedConfirmed.add(sibling.selectedTargetId)
+      }
+      if (sibling.selectedAction === 'mark_reentry' && sibling.selectedTargetId) {
+        claimedRemoved.add(sibling.selectedTargetId)
+      }
+    }
+    result[card.id] = { confirmedIds: claimedConfirmed, removedIds: claimedRemoved }
+  }
+  return result
+})
+
+const handleOkDisambiguation = async (disambiguationId) => {
+  const item = disambiguationItems.value.find(d => d.id === disambiguationId)
+  if (!item || !item.selectedAction) return
+
+  const payload = {
+    action: item.selectedAction,
+    target_id: item.selectedAction === 'mark_outgoing' ? item.selectedTargetId : null,
+    removed_id: item.selectedAction === 'mark_reentry' ? item.selectedTargetId : null,
+    scan_data: item.scanData,
+    // The disambiguation type changes the meaning of mark_outgoing:
+    //   reentry_or_outgoing → the scanned item is a NEW bar going in (not the removed one)
+    //     → create a new pending item alongside the outgoing
+    //   outgoing_or_new / multi_confirmed → the scan WAS of the outgoing item itself
+    //     → no new pending item should be created
+    dis_type: item.type
+  }
+  try {
+    const resp = await fetch('http://localhost:5000/api/foods/resolve-disambiguation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (resp.ok) {
+      disambiguationItems.value = disambiguationItems.value.filter(d => d.id !== disambiguationId)
+      await Promise.all([loadPendingItems(), loadOutgoingItems()])
+    } else {
+      console.error('Failed to resolve disambiguation')
+    }
+  } catch (e) {
+    console.error('Error resolving disambiguation:', e)
+  }
+}
+
 const handleRejectAll = () => {
   showRejectConfirm.value = true
 }
 
 const confirmRejectAll = async () => {
   try {
-    const response = await fetch('http://localhost:5000/api/foods/pending/delete', {
-      method: 'DELETE'
-    })
-    
-    if (response.ok) {
-      // Clear local array
+    const pendingResp = await fetch('http://localhost:5000/api/foods/pending/delete', { method: 'DELETE' })
+    if (pendingResp.ok) {
       detectedItems.value = []
       showRejectConfirm.value = false
     } else {
       console.error('Failed to delete pending items')
     }
+    const outgoingResp = await fetch('http://localhost:5000/api/foods/outgoing/restore', { method: 'POST' })
+    if (outgoingResp.ok) {
+      outgoingItems.value = []
+    }
+    // Dismiss all disambiguation cards — the scans that generated them are discarded
+    disambiguationItems.value = []
   } catch (error) {
-    console.error('Error deleting pending items:', error)
+    console.error('Error rejecting all items:', error)
   }
 }
 
@@ -251,21 +473,32 @@ const cancelRejectAll = () => {
 
 const closeItemList = async () => {
   try {
-    // Confirm all pending items (change status to 'confirmed')
-    const response = await fetch('http://localhost:5000/api/foods/pending/confirm', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    // Disambiguation items are resolved individually via their OK button before
+    // this function can be called (Confirm All is disabled while any remain).
+    // Nothing to do here for disambiguations.
+
+    // Confirm pending items
+    if (detectedItems.value.length > 0) {
+      const confirmResp = await fetch('http://localhost:5000/api/foods/pending/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (confirmResp.ok) {
+        detectedItems.value = []
+      } else {
+        alert('Failed to add items to inventory')
       }
-    })
-    
-    if (response.ok) {
-      // Clear local pending items array
-      detectedItems.value = []
-      alert('All items added to inventory successfully!')
-    } else {
-      alert('Failed to add items to inventory')
     }
+
+    // Delete outgoing items
+    if (outgoingItems.value.length > 0) {
+      const outgoingResp = await fetch('http://localhost:5000/api/foods/outgoing/delete', { method: 'DELETE' })
+      if (outgoingResp.ok) {
+        outgoingItems.value = []
+      }
+    }
+
+    await Promise.all([loadPendingItems(), loadOutgoingItems()])
   } catch (error) {
     console.error('Error confirming items:', error)
     alert('Error adding items to inventory')
@@ -296,6 +529,7 @@ const handleKeyDown = (event) => {
 
 onMounted(() => {
   loadPendingItems()
+  loadOutgoingItems()
   window.addEventListener('keydown', handleKeyDown)
 })
 
@@ -312,29 +546,59 @@ onUnmounted(() => {
       
       <main>
         <!-- Pending Items Banner -->
-        <div v-if="detectedItems.length > 0" class="pending-banner">
+        <div v-if="detectedItems.length > 0 || outgoingItems.length > 0 || disambiguationItems.length > 0" class="pending-banner">
           <div class="banner-content">
             <div class="banner-info">
               <span class="banner-icon">⚠️</span>
-              <span class="banner-text">{{ detectedItems.length }} Item{{ detectedItems.length > 1 ? 's' : '' }} Pending</span>
+              <span class="banner-text">
+                <template v-if="disambiguationItems.length > 0">{{ disambiguationItems.length }} Item{{ disambiguationItems.length > 1 ? 's' : '' }} Need{{ disambiguationItems.length > 1 ? '' : 's' }} Attention</template>
+                <template v-if="disambiguationItems.length > 0 && (detectedItems.length > 0 || outgoingItems.length > 0)"> · </template>
+                <template v-if="detectedItems.length > 0">{{ detectedItems.length }} Item{{ detectedItems.length > 1 ? 's' : '' }} Pending</template>
+                <template v-if="detectedItems.length > 0 && outgoingItems.length > 0"> · </template>
+                <template v-if="outgoingItems.length > 0">{{ outgoingItems.length }} Item{{ outgoingItems.length > 1 ? 's' : '' }} Outgoing</template>
+              </span>
             </div>
             <div class="banner-actions">
               <button v-if="!isOnInventoryPage" class="banner-button view-button" @click="navigateToInventory">
                 View
               </button>
               <template v-else>
-                <button class="banner-button reject-button" @click="handleRejectAll">
+                <button
+                  class="banner-button reject-button"
+                  :title="disambiguationItems.length > 0 ? 'Resolve all disambiguation cards first' : ''"
+                  @click="handleRejectAll"
+                >
                   Reject All
                 </button>
-                <button class="banner-button add-button" @click="closeItemList">
-                  Add to Inventory
+                <button
+                  class="banner-button add-button"
+                  :disabled="disambiguationItems.length > 0"
+                  :title="disambiguationItems.length > 0 ? 'Resolve all disambiguation cards first' : ''"
+                  @click="closeItemList"
+                >
+                  Confirm All
                 </button>
               </template>
             </div>
           </div>
         </div>
         
-        <RouterView :pending-items="detectedItems" @view-pending-item="handleViewPendingItem" />
+        <RouterView v-slot="{ Component }">
+          <keep-alive include="Inventory">
+            <component
+              :is="Component"
+              :pending-items="detectedItems"
+              :outgoing-items="outgoingItems"
+              :disambiguation-items="disambiguationItems"
+              :claimed-by-others="claimedByOthers"
+              @view-pending-item="handleViewPendingItem"
+              @switch-to-incoming="handleSwitchToIncoming"
+              @mark-as-new="handleMarkAsNew"
+              @resolve-disambiguation="handleResolveDisambiguation"
+              @ok-disambiguation="handleOkDisambiguation"
+            />
+          </keep-alive>
+        </RouterView>
       </main>
       <div class="right-spacer"></div>
     </div>
@@ -357,6 +621,8 @@ onUnmounted(() => {
       :storage-location="selectedItem.storage_location"
       :expiration-date="selectedItem.expiration_date"
       :notes="selectedItem.notes"
+      :image-blob="selectedItem.imageBlob ?? null"
+      :local-result="selectedItem.localResult ?? null"
       @close="closeResultsPopup"
       @confirm="handleConfirm"
       @remove="handleRemovePendingItem"
@@ -488,11 +754,14 @@ nav {
 /* Pending Items Banner */
 .pending-banner {
   width: 100%;
-  background: transparent;
+  background: oklch(0.14 0 0);
   border: 2px solid oklch(0.55 0.2 45);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  margin: 1rem 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  margin: 0 0 1rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .banner-content {
@@ -549,10 +818,17 @@ nav {
   color: oklch(0.95 0 0);
 }
 
-.add-button:hover {
+.add-button:hover:not(:disabled) {
   background: oklch(0.7 0.22 145);
   transform: translateY(-1px);
   box-shadow: 0 3px 10px rgba(0, 255, 100, 0.3);
+}
+
+.banner-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .reject-button {
@@ -560,7 +836,7 @@ nav {
   color: oklch(0.95 0 0);
 }
 
-.reject-button:hover {
+.reject-button:hover:not(:disabled) {
   background: oklch(0.6 0.22 25);
   transform: translateY(-1px);
   box-shadow: 0 3px 10px rgba(255, 100, 100, 0.3);
