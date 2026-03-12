@@ -1,0 +1,3904 @@
+ 
+                   
+                                                           
+>MQ2:400
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:461
+                                                                      
+>MQ5:566
+                                                                      
+>MQ8:285
+                                                                      
+>MQ9:774
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.14 hPa
+                                                          
+>Approx_altitude:126.55 m
+                                                     
+>Humidity:49.74 %
+                                                             
+                   
+                                                           
+>MQ2:396
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:447
+                                                                      
+>MQ5:566
+                                                                      
+>MQ8:293
+                                                                      
+>MQ9:753
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.14 hPa
+                                                          
+>Approx_altitude:126.55 m
+                                                     
+>Humidity:49.93 %
+                                                             
+                   
+                                                           
+>MQ2:388
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:451
+                                                                      
+>MQ5:565
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:739
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.33 m
+                                                     
+>Humidity:49.61 %
+                                                             
+                   
+                                                           
+>MQ2:392
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:437
+                                                                      
+>MQ5:570
+                                                                      
+>MQ8:284
+                                                                      
+>MQ9:742
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.24 m
+                                                     
+>Humidity:49.12 %
+                                                             
+                   
+                                                           
+>MQ2:394
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:415
+                                                                      
+>MQ5:572
+                                                                      
+>MQ8:285
+                                                                      
+>MQ9:725
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.19 m
+                                                     
+>Humidity:48.75 %
+                                                             
+                   
+                                                           
+>MQ2:404
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:443
+                                                                      
+>MQ5:567
+                                                                      
+>MQ8:284
+                                                                      
+>MQ9:748
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.94 m
+                                                     
+>Humidity:48.79 %
+                                                             
+                   
+                                                           
+>MQ2:394
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:428
+                                                                      
+>MQ5:543
+                                                                      
+>MQ8:273
+                                                                      
+>MQ9:738
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.79 Â°C
+                                                        
+>Pressure:998.21 hPa
+                                                          
+>Approx_altitude:126.00 m
+                                                     
+>Humidity:48.88 %
+                                                             
+                   
+                                                           
+>MQ2:413
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:438
+                                                                      
+>MQ5:568
+                                                                      
+>MQ8:287
+                                                                      
+>MQ9:740
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.21 hPa
+                                                          
+>Approx_altitude:125.97 m
+                                                     
+>Humidity:48.55 %
+                                                             
+                   
+                                                           
+>MQ2:379
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:426
+                                                                      
+>MQ5:564
+                                                                      
+>MQ8:284
+                                                                      
+>MQ9:725
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.16 hPa
+                                                          
+>Approx_altitude:126.38 m
+                                                     
+>Humidity:47.84 %
+                                                             
+                   
+                                                           
+>MQ2:387
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:417
+                                                                      
+>MQ5:589
+                                                                      
+>MQ8:315
+                                                                      
+>MQ9:720
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.21 hPa
+                                                          
+>Approx_altitude:125.99 m
+                                                     
+>Humidity:47.39 %
+                                                             
+                   
+                                                           
+>MQ2:372
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:430
+                                                                      
+>MQ5:552
+                                                                      
+>MQ8:284
+                                                                      
+>MQ9:736
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.20 hPa
+                                                          
+>Approx_altitude:126.05 m
+                                                     
+>Humidity:47.14 %
+                                                             
+                   
+                                                           
+>MQ2:349
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:440
+                                                                      
+>MQ5:593
+                                                                      
+>MQ8:318
+                                                                      
+>MQ9:762
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.29 m
+                                                     
+>Humidity:47.00 %
+                                                             
+                   
+                                                           
+>MQ2:361
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:401
+                                                                      
+>MQ5:544
+                                                                      
+>MQ8:284
+                                                                      
+>MQ9:710
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.34 m
+                                                     
+>Humidity:46.91 %
+                                                             
+                   
+                                                           
+>MQ2:363
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:394
+                                                                      
+>MQ5:554
+                                                                      
+>MQ8:249
+                                                                      
+>MQ9:733
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:>Temperature:23.80 Â°C
+                                                 
+>Pressure:998.16 hPa
+                                                          
+>Approx_altitude:126.41 m
+                                                     
+>Humidity:46.66 %
+                                                             
+                   
+                                                           
+>MQ2:352
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:398
+                                                                      
+>MQ5:>MQ5:>MQ8:284
+                                                            
+>MQ9:731
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.22 m
+                                                     
+>Humidity:46.49 %
+                                                             
+                   
+                                                           
+>MQ2:362
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:390
+                                                                      
+>MQ5:546
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:732
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.19 m
+                                                     
+>Humidity:46.48 %
+                                                             
+                   
+                                                           
+>MQ2:339
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:397
+                                                                      
+>MQ5:542
+                                                                      
+>MQ8:272
+                                                                      
+>MQ9:713
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.14 hPa
+                                                          
+>Approx_altitude:126.53 m
+                                                     
+>Humidity:46.33 %
+                                                             
+                   
+                                                           
+>MQ2:336
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:377
+                                                                      
+>MQ5:538
+                                                                      
+>MQ8:250
+                                                                      
+>MQ9:709
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.25 m
+                                                     
+>Humidity:45.94 %
+                                                             
+                   
+                                                           
+>MQ2:344
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:387
+                                                                      
+>MQ5:532
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:707
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.31 m
+                                                     
+>Humidity:45.78 %
+                                                             
+                   
+                                                           
+>MQ2:385
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:364
+                                                                      
+>MQ5:526
+                                                                      
+>MQ8:267
+                                                                      
+>MQ9:705
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.24 m
+                                                     
+>Humidity:45.67 %
+                                                             
+                   
+                                                           
+>MQ2:357
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:407
+                                                                      
+>MQ5:525
+                                                                      
+>MQ8:293
+                                                                      
+>MQ9:726
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.33 m
+                                                     
+>Humidity:45.59 %
+                                                             
+                   
+                                                           
+>MQ2:326
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:362
+                                                                      
+>MQ5:525
+                                                                      
+>MQ8:271
+                                                                      
+>MQ9:689
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.83 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:126.13 m
+                                                     
+>Humidity:45.36 %
+                                                             
+                   
+                                                           
+>MQ2:353
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:391
+                                                                      
+>MQ5:534
+                                                                      
+>MQ8:319
+                                                                      
+>MQ9:733
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.83 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:126.14 m
+                                                     
+>Humidity:45.81 %
+                                                             
+                   
+                                                           
+>MQ2:364
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:398
+                                                                      
+>MQ5:563
+                                                                      
+>MQ8:264
+                                                                      
+>MQ9:706
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.20 hPa
+                                                          
+>Approx_altitude:126.08 m
+                                                     
+>Humidity:45.72 %
+                                                             
+                   
+                                                           
+>MQ2:330
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:364
+                                                                      
+>MQ5:536
+                                                                      
+>MQ8:265
+                                                                      
+>MQ9:708
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:126.13 m
+                                                     
+>Humidity:45.98 %
+                                                             
+                   
+                                                           
+>MQ2:389
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:411
+                                                                      
+>MQ5:550
+                                                                      
+>MQ8:294
+                                                                      
+>MQ9:731
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.21 m
+                                                     
+>Humidity:46.49 %
+                                                             
+                   
+                                                           
+>MQ2:393
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:428
+                                                                      
+>MQ5:571
+                                                                      
+>MQ8:314
+                                                                      
+>MQ9:737
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.79 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.87 m
+                                                     
+>Humidity:46.35 %
+                                                             
+                   
+                                                           
+>MQ2:370
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:413
+                                                                      
+>MQ5:579
+                                                                      
+>MQ8:310
+                                                                      
+>MQ9:740
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.79 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.74 m
+                                                     
+>Humidity:46.22 %
+                                                             
+                   
+                                                           
+>MQ2:361
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:403
+                                                                      
+>MQ5:567
+                                                                      
+>MQ8:310
+                                                                      
+>MQ9:745
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.58 m
+                                                     
+>Humidity:46.16 %
+                                                             
+                   
+                                                           
+>MQ2:364
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:418
+                                                                      
+>MQ5:563
+                                                                      
+>MQ8:299
+                                                                      
+>MQ9:739
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.87 m
+                                                     
+>Humidity:46.10 %
+                                                             
+                   
+                                                           
+>MQ2:382
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:429
+                                                                      
+>MQ5:567
+                                                                      
+>MQ8:296
+                                                                      
+>MQ9:721
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.86 m
+                                                     
+>Humidity:46.12 %
+                                                             
+                   
+                                                           
+>MQ2:384
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:403
+                                                                      
+>MQ5:564
+                                                                      
+>MQ8:302
+                                                                      
+>MQ9:737
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.35 m
+                                                     
+>Humidity:45.81 %
+                                                             
+                   
+                                                           
+>MQ2:376
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:411
+                                                                      
+>MQ5:554
+                                                                      
+>MQ8:296
+                                                                      
+>MQ9:720
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:126.16 m
+                                                     
+>Humidity:45.39 %
+                                                             
+                   
+                                                           
+>MQ2:409
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:426
+                                                                      
+>MQ5:567
+                                                                      
+>MQ8:312
+                                                                      
+>MQ9:745
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.14 hPa
+                                                          
+>Approx_altitude:126.55 m
+                                                     
+>Humidity:45.49 %
+                                                             
+                   
+                                                           
+>MQ2:387
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:401
+                                                                      
+>MQ5:550
+                                                                      
+>MQ8:289
+                                                                      
+>MQ9:708
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.10 hPa
+                                                          
+>Approx_altitude:126.92 m
+                                                     
+>Humidity:46.17 %
+                                                             
+                   
+                                                           
+>MQ2:391
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.08 hPa
+                                                          
+>Approx_altitude:127.08 m
+                                                     
+>Humidity:46.51 %
+
+                                                           
+>MQ255:142
+                                                                    
+>MQ2:387
+re:23.78 Â°C
+                                                        
+>MQ3:142
+998.08 hPa
+                                                          
+>MQ4:438
+titude:127.11 m
+                                                     
+>MQ5:589
+46.43 %
+                                                             
+>MQ8:323
+         
+                                                           
+>MQ9:737
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.04 hPa
+                                                          
+>Approx_altitude:127.37 m
+                                                     
+>Humidity:46.44 %
+                                                             
+                   
+                                                           
+>MQ2:401
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:413
+                                                                      
+>MQ5:567
+                                                                      
+>MQ8:300
+                                                                      
+>MQ9:738
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.08 hPa
+                                                          
+>Approx_altitude:127.05 m
+                                                     
+>Humidity:46.35 %
+                                                             
+                   
+                                                           
+>MQ2:401
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:416
+                                                                      
+>MQ5:571
+                                                                      
+>MQ8:302
+                                                                      
+>MQ9:731
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.06 hPa
+                                                          
+>Approx_altitude:127.20 m
+                                                     
+>Humidity:47.65 %
+                                                             
+                   
+                                                           
+>MQ2:427
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:436
+                                                                      
+>MQ5:517
+                                                                      
+>MQ8:299
+                                                                      
+>MQ9:744
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.11 hPa
+                                                          
+>Approx_altitude:126.85 m
+                                                     
+>Humidity:48.30 %
+                                                             
+                   
+                                                           
+>MQ2:425
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:369
+                                                                      
+>MQ5:540
+                                                                      
+>MQ8:256
+                                                                      
+>MQ9:696
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.16 hPa
+                                                          
+>Approx_altitude:126.41 m
+                                                     
+>Humidity:47.73 %
+                                                             
+                   
+                                                           
+>MQ2:377
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:403
+                                                                      
+>MQ5:554
+                                                                      
+>MQ8:284
+                                                                      
+>MQ9:722
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.29 m
+                                                     
+>Humidity:47.50 %
+                                                             
+                   
+                                                           
+>MQ2:379
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:408
+                                                                      
+>MQ5:568
+                                                                      
+>MQ8:283
+                                                                      
+>MQ9:724
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.28 m
+                                                     
+>Humidity:47.43 %
+                                                             
+                   
+                                                           
+>MQ2:359
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:308
+                                                                      
+>MQ5:479
+                                                                      
+>MQ8:221
+                                                                      
+>MQ9:635
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.15 hPa
+                                                          
+>Approx_altitude:126.44 m
+                                                     
+>Humidity:47.45 %
+                                                             
+                   
+                                                           
+>MQ2:257
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:356
+                                                                      
+>MQ5:452
+                                                                      
+>MQ8:161
+                                                                      
+>MQ9:657
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.26 m
+                                                     
+>Humidity:47.49 %
+                                                             
+                   
+                                                           
+>MQ2:368
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:426
+                                                                      
+>MQ5:518
+                                                                      
+>MQ8:262
+                                                                      
+>MQ9:705
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.11 hPa
+                                                          
+>Approx_altitude:126.85 m
+                                                     
+>Humidity:47.59 %
+                                                             
+                   
+                                                           
+>MQ2:368
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:352
+                                                                      
+>MQ5:504
+                                                                      
+>MQ8:265
+                                                                      
+>MQ9:710
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.79 Â°C
+                                                        
+>Pressure:998.09 hPa
+                                                          
+>Approx_altitude:126.99 m
+                                                     
+>Humidity:47.90 %
+                                                             
+                   
+                                                           
+>MQ2:368
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:452
+                                                                      
+>MQ5:534
+                                                                      
+>MQ8:261
+                                                                      
+>MQ9:696
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.08 hPa
+                                                          
+>Approx_altitude:127.05 m
+                                                     
+>Humidity:48.02 %
+                                                             
+                   
+                                                           
+>MQ2:360
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:417
+                                                                      
+>MQ5:534
+                                                                      
+>MQ8:267
+                                                                      
+>MQ9:698
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.10 hPa
+                                                          
+>Approx_altitude:126.91 m
+                                                     
+>Humidity:47.87 %
+                                                             
+                   
+                                                           
+>MQ2:366
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:406
+                                                                      
+>MQ5:542
+                                                                      
+>MQ8:266
+                                                                      
+>MQ9:706
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.14 hPa
+                                                          
+>Approx_altitude:126.54 m
+                                                     
+>Humidity:48.66 %
+                                                             
+                   
+                                                           
+>MQ2:366
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:422
+                                                                      
+>MQ5:527
+                                                                      
+>MQ8:272
+                                                                      
+>MQ9:694
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.21 m
+                                                     
+>Humidity:48.95 %
+                                                             
+                   
+                                                           
+>MQ2:373
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:413
+                                                                      
+>MQ5:540
+                                                                      
+>MQ8:242
+                                                                      
+>MQ9:722
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.29 m
+                                                     
+>Humidity:48.67 %
+                                                             
+                   
+                                                           
+>MQ2:356
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:399
+                                                                      
+>MQ5:516
+                                                                      
+>MQ8:287
+                                                                      
+>MQ9:711
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.33 m
+                                                     
+>Humidity:48.49 %
+                                                             
+                   
+                                                           
+>MQ2:362
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:387
+                                                                      
+>MQ5:541
+                                                                      
+>MQ8:275
+                                                                      
+>MQ9:708
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.76 Â°C
+                                                        
+>Pressure:998.10 hPa
+                                                          
+>Approx_altitude:126.91 m
+                                                     
+>Humidity:48.35 %
+                                                             
+                   
+                                                           
+>MQ2:350
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:389
+                                                                      
+>MQ5:533
+                                                                      
+>MQ8:269
+                                                                      
+>MQ9:696
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.10 hPa
+                                                          
+>Approx_altitude:126.95 m
+                                                     
+>Humidity:48.25 %
+                                                             
+                   
+                                                           
+>MQ2:336
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:384
+                                                                      
+>MQ5:538
+                                                                      
+>MQ8:271
+                                                                      
+>MQ9:705
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.77 Â°C
+                                                        
+>Pressure:998.13 hPa
+                                                          
+>Approx_altitude:126.64 m
+                                                     
+>Humidity:48.27 %
+                                                             
+                   
+                                                           
+>MQ2:360
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:400
+                                                                      
+>MQ5:533
+                                                                      
+>MQ8:280
+                                                                      
+>MQ9:738
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.10 hPa
+                                                          
+>Approx_altitude:126.87 m
+                                                     
+>Humidity:48.48 %
+                                                             
+                   
+                                                           
+>MQ2:359
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:413
+                                                                      
+>MQ5:532
+                                                                      
+>MQ8:274
+                                                                      
+>MQ9:712
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.78 Â°C
+                                                        
+>Pressure:998.09 hPa
+                                                          
+>Approx_altitude:127.02 m
+                                                     
+>Humidity:48.64 %
+                                                             
+                   
+                                                           
+>MQ2:389
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:444
+                                                                      
+>MQ5:545
+                                                                      
+>MQ8:273
+                                                                      
+>MQ9:722
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.79 Â°C
+                                                        
+>Pressure:998.12 hPa
+                                                          
+>Approx_altitude:126.73 m
+                                                     
+>Humidity:48.73 %
+                                                             
+                   
+                                                           
+>MQ2:384
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:416
+                                                                      
+>MQ5:564
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:731
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.80 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.23 m
+                                                     
+>Humidity:48.82 %
+                                                             
+                   
+                                                           
+>MQ2:369
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:395
+                                                                      
+>MQ5:543
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:726
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.19 m
+                                                     
+>Humidity:48.68 %
+                                                             
+                   
+                                                           
+>MQ2:361
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:413
+                                                                      
+>MQ5:546
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:722
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.20 hPa
+                                                          
+>Approx_altitude:126.08 m
+                                                     
+>Humidity:48.50 %
+                                                             
+                   
+                                                           
+>MQ2:376
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:395
+                                                                      
+>MQ5:529
+                                                                      
+>MQ8:275
+                                                                      
+>MQ9:709
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.26 m
+                                                     
+>Humidity:48.38 %
+                                                             
+                   
+                                                           
+>MQ2:357
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:398
+                                                                      
+>MQ5:532
+                                                                      
+>MQ8:280
+                                                                      
+>MQ9:719
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.17 hPa
+                                                          
+>Approx_altitude:126.29 m
+                                                     
+>Humidity:48.27 %
+                                                             
+                   
+                                                           
+>MQ2:360
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:387
+                                                                      
+>MQ5:546
+                                                                      
+>MQ8:274
+                                                                      
+>MQ9:708
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:126.15 m
+                                                     
+>Humidity:48.25 %
+                                                             
+                   
+                                                           
+>MQ2:362
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:331
+                                                                      
+>MQ5:517
+                                                                      
+>MQ8:268
+                                                                      
+>MQ9:708
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.81 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:126.16 m
+                                                     
+>Humidity:48.41 %
+                                                             
+                   
+                                                           
+>MQ2:370
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:405
+                                                                      
+>MQ5:542
+                                                                      
+>MQ8:281
+                                                                      
+>MQ9:707
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.27 m
+                                                     
+>Humidity:48.67 %
+                                                             
+                   
+                                                           
+>MQ2:422
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:430
+                                                                      
+>MQ5:540
+                                                                      
+>MQ8:256
+                                                                      
+>MQ9:696
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.16 hPa
+                                                          
+>Approx_altitude:126.40 m
+                                                     
+>Humidity:48.84 %
+                                                             
+                   
+                                                           
+>MQ2:338
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:403
+                                                                      
+>MQ5:509
+                                                                      
+>MQ8:271
+                                                                      
+>MQ9:721
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.82 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.21 m
+                                                     
+>Humidity:48.83 %
+                                                             
+                   
+                                                           
+>MQ2:391
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:477
+                                                                      
+>MQ5:573
+                                                                      
+>MQ8:294
+                                                                      
+>MQ9:744
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.83 Â°C
+                                                        
+>Pressure:998.21 hPa
+                                                          
+>Approx_altitude:126.01 m
+                                                     
+>Humidity:48.79 %
+                                                             
+                   
+                                                           
+>MQ2:426
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:490
+                                                                      
+>MQ5:586
+                                                                      
+>MQ8:285
+                                                                      
+>MQ9:783
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.83 Â°C
+                                                        
+>Pressure:998.18 hPa
+                                                          
+>Approx_altitude:126.25 m
+                                                     
+>Humidity:48.79 %
+                                                             
+                   
+                                                           
+>MQ2:452
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:554
+                                                                      
+>MQ5:578
+                                                                      
+>MQ8:330
+                                                                      
+>MQ9:825
+                                                                      
+>MQ135:>MQ255:142
+                                                             
+>Temperature:23.83 Â°C
+                                                        
+>Pressure:998.19 hPa
+                                                          
+>Approx_altitude:125.96 m
+                                                     
+>Humidity:48.94 %
+                                                             
+                   
+                                                           
+>MQ2:461
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:616
+                                                                      
+>MQ5:594
+                                                                      
+>MQ8:300
+                                                                      
+>MQ9:830
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.83 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.89 m
+                                                     
+>Humidity:49.21 %
+                                                             
+                   
+                                                           
+>MQ2:502
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:660
+                                                                      
+>MQ5:616
+                                                                      
+>MQ8:322
+                                                                      
+>MQ9:855
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.84 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.93 m
+                                                     
+>Humidity:49.78 %
+                                                             
+                   
+                                                           
+>MQ2:463
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:665
+                                                                      
+>MQ5:617
+                                                                      
+>MQ8:322
+                                                                      
+>MQ9:879
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.92 m
+                                                     
+>Humidity:50.15 %
+                                                             
+                   
+                                                           
+>MQ2:503
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:673
+                                                                      
+>MQ5:616
+                                                                      
+>MQ8:327
+                                                                      
+>MQ9:886
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.65 m
+                                                     
+>Humidity:50.42 %
+                                                             
+                   
+                                                           
+>MQ2:497
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:667
+                                                                      
+>MQ5:636
+                                                                      
+>MQ8:338
+                                                                      
+>MQ9:907
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.86 m
+                                                     
+>Humidity:50.50 %
+                                                             
+                   
+                                                           
+>MQ2:492
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:694
+                                                                      
+>MQ5:653
+                                                                      
+>MQ8:351
+                                                                      
+>MQ9:933
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.84 Â°C
+                                                        
+>Pressure:998.39 hPa
+                                                          
+>Approx_altitude:124.47 m
+                                                     
+>Humidity:50.32 %
+                                                             
+                   
+                                                           
+>MQ2:503
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:734
+                                                                      
+>MQ5:658
+                                                                      
+>MQ8:345
+                                                                      
+>MQ9:965
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.23 hPa
+                                                          
+>Approx_altitude:125.83 m
+                                                     
+>Humidity:50.21 %
+                                                             
+                   
+                                                           
+>MQ2:523
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:736
+                                                                      
+>MQ5:655
+                                                                      
+>MQ8:348
+                                                                      
+>MQ9:966
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.52 m
+                                                     
+>Humidity:50.08 %
+                                                             
+                   
+                                                           
+>MQ2:565
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:742
+                                                                      
+>MQ5:681
+                                                                      
+>MQ8:368
+                                                                      
+>MQ9:982
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.46 m
+                                                     
+>Humidity:49.96 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:732
+                                                                      
+>MQ5:655
+                                                                      
+>MQ8:348
+                                                                      
+>MQ9:981
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.54 m
+                                                     
+>Humidity:49.93 %
+                                                             
+                   
+                                                           
+>MQ2:517
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:712
+                                                                      
+>MQ5:650
+                                                                      
+>MQ8:351
+                                                                      
+>MQ9:1002
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.52 m
+                                                     
+>Humidity:50.02 %
+                                                             
+                   
+                                                           
+>MQ2:533
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:710
+                                                                      
+>MQ5:654
+                                                                      
+>MQ8:376
+                                                                      
+>MQ9:965
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.34 m
+                                                     
+>Humidity:50.18 %
+                                                             
+                   
+                                                           
+>MQ2:539
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:699
+                                                                      
+>MQ5:642
+                                                                      
+>MQ8:339
+                                                                      
+>MQ9:959
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.48 m
+                                                     
+>Humidity:50.40 %
+                                                             
+                   
+                                                           
+>MQ2:528
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:692
+                                                                      
+>MQ5:649
+                                                                      
+>MQ8:335
+                                                                      
+>MQ9:965
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.48 m
+                                                     
+>Humidity:50.65 %
+                                                             
+                   
+                                                           
+>MQ2:512
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:696
+                                                                      
+>MQ5:655
+                                                                      
+>MQ8:343
+                                                                      
+>MQ9:981
+                                                                      
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.49 m
+                                                     
+>Humidity:50.87 %
+                                                             
+                   
+                                                           
+>MQ2:536
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:707
+                                                                      
+>MQ5:649
+                                                                      
+>MQ8:348
+                                                                      
+>MQ9:1003
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.84 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.32 m
+                                                     
+>Humidity:51.04 %
+                                                             
+                   
+                                                           
+>MQ2:528
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:706
+                                                                      
+>MQ5:665
+                                                                      
+>MQ8:351
+                                                                      
+>MQ9:1001
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.56 m
+                                                     
+>Humidity:51.23 %
+                                                             
+                   
+                                                           
+>MQ2:554
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:717
+                                                                      
+>MQ5:666
+                                                                      
+>MQ8:338
+                                                                      
+>MQ9:1011
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.55 m
+                                                     
+>Humidity:51.46 %
+                                                             
+                   
+                                                           
+>MQ2:544
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:713
+                                                                      
+>MQ5:733
+                                                                      
+>MQ8:351
+                                                                      
+>MQ9:1010
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.36 m
+                                                     
+>Humidity:51.63 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:733
+                                                                      
+>MQ5:675
+                                                                      
+>MQ8:361
+                                                                      
+>MQ9:1033
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.49 m
+                                                     
+>Humidity:51.79 %
+                                                             
+                   
+                                                           
+>MQ2:501
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:749
+                                                                      
+>MQ5:675
+                                                                      
+>MQ8:357
+                                                                      
+>MQ9:1039
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.47 m
+                                                     
+>Humidity:51.97 %
+                                                             
+                   
+                                                           
+>MQ2:546
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:777
+                                                                      
+>MQ5:696
+                                                                      
+>MQ8:387
+                                                                      
+>MQ9:1064
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.85 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.68 m
+                                                     
+>Humidity:52.23 %
+                                                             
+                   
+                                                           
+>MQ2:540
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:774
+                                                                      
+>MQ5:673
+                                                                      
+>MQ8:363
+                                                                      
+>MQ9:1059
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.86 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.74 m
+                                                     
+>Humidity:52.42 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:786
+                                                                      
+>MQ5:681
+                                                                      
+>MQ8:354
+                                                                      
+>MQ9:1050
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.86 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.42 m
+                                                     
+>Humidity:52.51 %
+                                                             
+                   
+                                                           
+>MQ2:534
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:787
+                                                                      
+>MQ5:721
+                                                                      
+>MQ8:360
+                                                                      
+>MQ9:1068
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.86 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.54 m
+                                                     
+>Humidity:52.67 %
+                                                             
+                   
+                                                           
+>MQ2:526
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:847
+                                                                      
+>MQ5:687
+                                                                      
+>MQ8:366
+                                                                      
+>MQ9:1074
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.87 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.45 m
+                                                     
+>Humidity:52.84 %
+                                                             
+                   
+                                                           
+>MQ2:544
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:799
+                                                                      
+>MQ5:675
+                                                                      
+>MQ8:364
+                                                                      
+>MQ9:1083
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.87 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.35 m
+                                                     
+>Humidity:52.96 %
+                                                             
+                   
+                                                           
+>MQ2:536
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:799
+                                                                      
+>MQ5:688
+                                                                      
+>MQ8:361
+                                                                      
+>MQ9:1078
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.86 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.61 m
+                                                     
+>Humidity:53.04 %
+                                                             
+                   
+                                                           
+>MQ2:534
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:794
+                                                                      
+>MQ5:689
+                                                                      
+>MQ8:360
+                                                                      
+>MQ9:1093
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.87 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.40 m
+                                                     
+>Humidity:53.16 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:801
+                                                                      
+>MQ5:683
+                                                                      
+>MQ8:361
+                                                                      
+>MQ9:1118
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.87 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.70 m
+                                                     
+>Humidity:53.26 %
+                                                             
+                   
+                                                           
+>MQ2:554
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:826
+                                                                      
+>MQ5:705
+                                                                      
+>MQ8:305
+                                                                      
+>MQ9:1118
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.88 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.74 m
+                                                     
+>Humidity:53.35 %
+                                                             
+                   
+                                                           
+>MQ2:538
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:825
+                                                                      
+>MQ5:686
+                                                                      
+>MQ8:361
+                                                                      
+>MQ9:1085
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.88 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.88 m
+                                                     
+>Humidity:53.47 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:825
+                                                                      
+>MQ5:681
+                                                                      
+>MQ8:365
+                                                                      
+>MQ9:1098
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.88 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.35 m
+                                                     
+>Humidity:53.59 %
+                                                             
+                   
+                                                           
+>MQ2:445
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:825
+                                                                      
+>MQ5:689
+                                                                      
+>MQ8:361
+                                                                      
+>MQ9:1103
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.89 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.35 m
+                                                     
+>Humidity:53.73 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:816
+                                                                      
+>MQ5:696
+                                                                      
+>MQ8:355
+                                                                      
+>MQ9:1109
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.89 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.36 m
+                                                     
+>Humidity:53.85 %
+                                                             
+                   
+                                                           
+>MQ2:538
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:838
+                                                                      
+>MQ5:683
+                                                                      
+>MQ8:366
+                                                                      
+>MQ9:1118
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.89 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.55 m
+                                                     
+>Humidity:53.99 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:846
+                                                                      
+>MQ5:695
+                                                                      
+>MQ8:361
+                                                                      
+>MQ9:1106
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.89 Â°C
+                                                        
+>Pressure:998.23 hPa
+                                                          
+>Approx_altitude:125.83 m
+                                                     
+>Humidity:54.18 %
+                                                             
+                   
+                                                           
+>MQ2:553
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:845
+                                                                      
+>MQ5:670
+                                                                      
+>MQ8:369
+                                                                      
+>MQ9:1121
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.89 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.88 m
+                                                     
+>Humidity:54.33 %
+                                                             
+                   
+                                                           
+>MQ2:537
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:840
+                                                                      
+>MQ5:691
+                                                                      
+>MQ8:372
+                                                                      
+>MQ9:1114
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.90 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.73 m
+                                                     
+>Humidity:54.42 %
+                                                             
+                   
+                                                           
+>MQ2:545
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:853
+                                                                      
+>MQ5:696
+                                                                      
+>MQ8:364
+                                                                      
+>MQ9:1121
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.90 Â°C
+                                                        
+>Pressure:998.23 hPa
+                                                          
+>Approx_altitude:125.78 m
+                                                     
+>Humidity:54.54 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:858
+                                                                      
+>MQ5:700
+                                                                      
+>MQ8:350
+                                                                      
+>MQ9:1117
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.91 Â°C
+                                                        
+>Pressure:998.21 hPa
+                                                          
+>Approx_altitude:125.97 m
+                                                     
+>Humidity:54.67 %
+                                                             
+                   
+                                                           
+>MQ2:564
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:877
+                                                                      
+>MQ5:693
+                                                                      
+>MQ8:377
+                                                                      
+>MQ9:1120
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.91 Â°C
+                                                        
+>Pressure:998.23 hPa
+                                                          
+>Approx_altitude:125.80 m
+                                                     
+>Humidity:54.81 %
+                                                             
+                   
+                                                           
+>MQ2:548
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:913
+                                                                      
+>MQ5:688
+                                                                      
+>MQ8:371
+                                                                      
+>MQ9:1117
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.91 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.75 m
+                                                     
+>Humidity:54.95 %
+                                                             
+                   
+                                                           
+>MQ2:549
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:948
+                                                                      
+>MQ5:708
+                                                                      
+>MQ8:392
+                                                                      
+>MQ9:1139
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.91 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.89 m
+                                                     
+>Humidity:55.07 %
+                                                             
+                   
+                                                           
+>MQ2:554
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:1006
+                                                                     
+>MQ5:702
+                                                                      
+>MQ8:360
+                                                                      
+>MQ9:1124
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.91 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.58 m
+                                                     
+>Humidity:55.16 %
+                                                             
+                   
+                                                           
+>MQ2:566
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:919
+                                                                      
+>MQ5:704
+                                                                      
+>MQ8:373
+                                                                      
+>MQ9:1129
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.92 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.80 m
+                                                     
+>Humidity:55.25 %
+                                                             
+                   
+                                                           
+>MQ2:550
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:931
+                                                                      
+>MQ5:700
+                                                                      
+>MQ8:377
+                                                                      
+>MQ9:1139
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.92 Â°C
+                                                        
+>Pressure:998.20 hPa
+                                                          
+>Approx_altitude:126.03 m
+                                                     
+>Humidity:55.34 %
+                                                             
+                   
+                                                           
+>MQ2:563
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:929
+                                                                      
+>MQ5:696
+                                                                      
+>MQ8:367
+                                                                      
+>MQ9:1131
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.92 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.66 m
+                                                     
+>Humidity:55.43 %
+                                                             
+                   
+                                                           
+>MQ2:542
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:937
+                                                                      
+>MQ5:699
+                                                                      
+>MQ8:370
+                                                                      
+>MQ9:1068
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.93 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.61 m
+                                                     
+>Humidity:55.54 %
+                                                             
+                   
+                                                           
+>MQ2:567
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:966
+                                                                      
+>MQ5:685
+                                                                      
+>MQ8:343
+                                                                      
+>MQ9:1135
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.93 Â°C
+                                                        
+>Pressure:998.24 hPa
+                                                          
+>Approx_altitude:125.69 m
+                                                     
+>Humidity:55.67 %
+                                                             
+                   
+                                                           
+>MQ2:573
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:979
+                                                                      
+>MQ5:706
+                                                                      
+>MQ8:376
+                                                                      
+>MQ9:1151
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.93 Â°C
+                                                        
+>Pressure:998.21 hPa
+                                                          
+>Approx_altitude:126.02 m
+                                                     
+>Humidity:55.82 %
+                                                             
+                   
+                                                           
+>MQ2:568
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:974
+                                                                      
+>MQ5:697
+                                                                      
+>MQ8:368
+                                                                      
+>MQ9:1147
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.93 Â°C
+                                                        
+>Pressure:998.22 hPa
+                                                          
+>Approx_altitude:125.93 m
+                                                     
+>Humidity:55.90 %
+                                                             
+                   
+                                                           
+>MQ2:592
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:982
+                                                                      
+>MQ5:722
+                                                                      
+>MQ8:390
+                                                                      
+>MQ9:1160
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.94 Â°C
+                                                        
+>Pressure:998.23 hPa
+                                                          
+>Approx_altitude:125.80 m
+                                                     
+>Humidity:55.94 %
+                                                             
+                   
+                                                           
+>MQ2:571
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:955
+                                                                      
+>MQ5:701
+                                                                      
+>MQ8:363
+                                                                      
+>MQ9:1146
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.94 Â°C
+                                                        
+>Pressure:998.20 hPa
+                                                          
+>Approx_altitude:126.09 m
+                                                     
+>Humidity:55.99 %
+                                                             
+                   
+                                                           
+>MQ2:567
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:984
+                                                                      
+>MQ5:709
+                                                                      
+>MQ8:378
+                                                                      
+>MQ9:1150
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.95 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.60 m
+                                                     
+>Humidity:56.15 %
+                                                             
+                   
+                                                           
+>MQ2:574
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:991
+                                                                      
+>MQ5:718
+                                                                      
+>MQ8:403
+                                                                      
+>MQ9:1160
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.95 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.68 m
+                                                     
+>Humidity:56.28 %
+                                                             
+                   
+                                                           
+>MQ2:569
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:995
+                                                                      
+>MQ5:673
+                                                                      
+>MQ8:383
+                                                                      
+>MQ9:1152
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.96 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.52 m
+                                                     
+>Humidity:56.37 %
+                                                             
+                   
+                                                           
+>MQ2:554
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:1026
+                                                                     
+>MQ5:707
+                                                                      
+>MQ8:380
+                                                                      
+>MQ9:1157
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.96 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.42 m
+                                                     
+>Humidity:56.49 %
+                                                             
+                   
+                                                           
+>MQ2:549
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:983
+                                                                      
+>MQ5:708
+                                                                      
+>MQ8:376
+                                                                      
+>MQ9:1147
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.96 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.62 m
+                                                     
+>Humidity:56.61 %
+                                                             
+                   
+                                                           
+>MQ2:583
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:975
+                                                                      
+>MQ5:704
+                                                                      
+>MQ8:387
+                                                                      
+>MQ9:1160
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.96 Â°C
+                                                        
+>Pressure:998.26 hPa
+                                                          
+>Approx_altitude:125.58 m
+                                                     
+>Humidity:56.70 %
+                                                             
+                   
+                                                           
+>MQ2:568
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:985
+                                                                      
+>MQ5:719
+                                                                      
+>MQ8:375
+                                                                      
+>MQ9:1160
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.97 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.33 m
+                                                     
+>Humidity:56.78 %
+                                                             
+                   
+                                                           
+>MQ2:581
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:1002
+                                                                     
+>MQ5:712
+                                                                      
+>MQ8:387
+                                                                      
+>MQ9:1160
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.97 Â°C
+                                                        
+>Pressure:998.31 hPa
+                                                          
+>Approx_altitude:125.15 m
+                                                     
+>Humidity:56.87 %
+                                                             
+                   
+                                                           
+>MQ2:592
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:1002
+                                                                     
+>MQ5:710
+                                                                      
+>MQ8:384
+                                                                      
+>MQ9:1166
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.97 Â°C
+                                                        
+>Pressure:998.30 hPa
+                                                          
+>Approx_altitude:125.20 m
+                                                     
+>Humidity:56.96 %
+                                                             
+                   
+                                                           
+>MQ2:580
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:1035
+                                                                     
+>MQ5:709
+                                                                      
+>MQ8:381
+                                                                      
+>MQ9:1161
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.97 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.47 m
+                                                     
+>Humidity:57.04 %
+                                                             
+                   
+                                                           
+>MQ2:587
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:988
+                                                                      
+>MQ5:710
+                                                                      
+>MQ8:384
+                                                                      
+>MQ9:1178
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.98 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.39 m
+                                                     
+>Humidity:57.14 %
+                                                             
+                   
+                                                           
+>MQ2:583
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:990
+                                                                      
+>MQ5:712
+                                                                      
+>MQ8:397
+                                                                      
+>MQ9:1186
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.98 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.32 m
+                                                     
+>Humidity:57.22 %
+                                                             
+                   
+                                                           
+>MQ2:570
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:948
+                                                                      
+>MQ5:720
+                                                                      
+>MQ8:387
+                                                                      
+>MQ9:1184
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.99 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.32 m
+                                                     
+>Humidity:57.28 %
+                                                             
+                   
+                                                           
+>MQ2:582
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:957
+                                                                      
+>MQ5:712
+                                                                      
+>MQ8:389
+                                                                      
+>MQ9:1223
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.99 Â°C
+                                                        
+>Pressure:998.28 hPa
+                                                          
+>Approx_altitude:125.39 m
+                                                     
+>Humidity:57.32 %
+                                                             
+                   
+                                                           
+>MQ2:579
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:950
+                                                                      
+>MQ5:708
+                                                                      
+>MQ8:416
+                                                                      
+>MQ9:1186
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.99 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.30 m
+                                                     
+>Humidity:57.38 %
+                                                             
+                   
+                                                           
+>MQ2:568
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:965
+                                                                      
+>MQ5:735
+                                                                      
+>MQ8:375
+                                                                      
+>MQ9:1179
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.99 Â°C
+                                                        
+>Pressure:998.30 hPa
+                                                          
+>Approx_altitude:125.24 m
+                                                     
+>Humidity:57.44 %
+                                                             
+                   
+                                                           
+>MQ2:579
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:966
+                                                                      
+>MQ5:713
+                                                                      
+>MQ8:387
+                                                                      
+>MQ9:1186
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:23.99 Â°C
+                                                        
+>Pressure:998.31 hPa
+                                                          
+>Approx_altitude:125.16 m
+                                                     
+>Humidity:57.54 %
+                                                             
+                   
+                                                           
+>MQ2:572
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:966
+                                                                      
+>MQ5:717
+                                                                      
+>MQ8:384
+                                                                      
+>MQ9:1179
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.00 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.50 m
+                                                     
+>Humidity:57.67 %
+                                                             
+                   
+                                                           
+>MQ2:586
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:982
+                                                                      
+>MQ5:711
+                                                                      
+>MQ8:378
+                                                                      
+>MQ9:1197
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.00 Â°C
+                                                        
+>Pressure:998.31 hPa
+                                                          
+>Approx_altitude:125.16 m
+                                                     
+>Humidity:57.73 %
+                                                             
+                   
+                                                           
+>MQ2:575
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:962
+                                                                      
+>MQ5:713
+                                                                      
+>MQ8:384
+                                                                      
+>MQ9:1188
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.00 Â°C
+                                                        
+>Pressure:998.27 hPa
+                                                          
+>Approx_altitude:125.47 m
+                                                     
+>Humidity:57.77 %
+                                                             
+                   
+                                                           
+>MQ2:602
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:993
+                                                                      
+>MQ5:730
+                                                                      
+>MQ8:384
+                                                                      
+>MQ9:1199
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.01 Â°C
+                                                        
+>Pressure:998.32 hPa
+                                                          
+>Approx_altitude:125.09 m
+                                                     
+>Humidity:57.85 %
+                                                             
+                   
+                                                           
+>MQ2:585
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:978
+                                                                      
+>MQ5:712
+                                                                      
+>MQ8:386
+                                                                      
+>MQ9:1199
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.02 Â°C
+                                                        
+>Pressure:998.25 hPa
+                                                          
+>Approx_altitude:125.64 m
+                                                     
+>Humidity:57.97 %
+                                                             
+                   
+                                                           
+>MQ2:588
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:921
+                                                                      
+>MQ5:722
+                                                                      
+>MQ8:384
+                                                                      
+>MQ9:1199
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.02 Â°C
+                                                        
+>Pressure:998.29 hPa
+                                                          
+>Approx_altitude:125.32 m
+                                                     
+>Humidity:58.06 %
+                                                             
+                   
+                                                           
+>MQ2:584
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:991
+                                                                      
+>MQ5:724
+                                                                      
+>MQ8:380
+                                                                      
+>MQ9:1202
+                                                                     
+>MQ135:142
+                                                                    
+>MQ255:142
+                                                                    
+>Temperature:24.03 Â°C
+                                                        
+>Pressure:998.31 hPa
+                                                          
+>Approx_altitude:125.15 m
+                                                     
+>Humidity:58.13 %
+                                                             
+                   
+                                                           
+>MQ2:569
+                                                                      
+>MQ3:142
+                                                                      
+>MQ4:998
+                                                                      
+>MQ5:724
+                                                                      
+>MQ8:389
+                                                                      
+            
