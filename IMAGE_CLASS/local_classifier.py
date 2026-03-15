@@ -74,9 +74,22 @@ def _ensure_loaded():
         if not os.path.exists(_MODEL_PATH):
             raise FileNotFoundError(f"Model file not found: {_MODEL_PATH}")
         class_names = _load_class_names()
+        checkpoint = torch.load(_MODEL_PATH, map_location=_device)
+
+        # Support both raw state_dict checkpoints and wrapped training checkpoints.
+        state_dict = checkpoint
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            state_dict = checkpoint['model_state_dict']
+            if isinstance(checkpoint.get('class_names'), list) and checkpoint['class_names']:
+                class_names = checkpoint['class_names']
+
+        num_classes = len(class_names)
+        if isinstance(checkpoint, dict) and isinstance(checkpoint.get('num_classes'), int):
+            num_classes = checkpoint['num_classes']
+
         m = models.resnet18(weights=None)
-        m.fc = nn.Linear(m.fc.in_features, 101)
-        m.load_state_dict(torch.load(_MODEL_PATH, map_location=_device))
+        m.fc = nn.Linear(m.fc.in_features, num_classes)
+        m.load_state_dict(state_dict)
         m.to(_device)
         m.eval()
         _model       = m

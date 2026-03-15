@@ -1,11 +1,14 @@
 <!-- to run: "npm run dev" /> -->
 <script setup>
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, shallowRef, nextTick, onMounted, onUnmounted } from 'vue'
 import { RouterView, RouterLink, useRouter, useRoute } from 'vue-router'
+import lottie from 'lottie-web'
 import AppSidebar from './components/AppSidebar.vue'
 import { SidebarProvider, SidebarTrigger } from './components/ui/sidebar'
 import CameraCapture from './components/CameraCapture.vue'
 import FoodScanResults from './components/FoodScanResults.vue'
+import appLogo from './assets/fred.svg'
+import fredThinkAnimation from './assets/fred_think.json'
 import { loadFoodsFromCSV } from './utils/csvParser'
 
 const router = useRouter()
@@ -17,9 +20,35 @@ const showRejectConfirm = ref(false)
 const detectedItems = ref([])
 const selectedItem = ref(null)
 const isClassifying = ref(false)
+const classifyingCount = ref(0)
+const classificationAnimRef = ref(null)
+const classificationAnimInstance = shallowRef(null)
 const imageBlobCache = ref({})    // food name (lowercase) -> Blob, for in-session compare
 const localResultCache = ref({})  // food name (lowercase) -> local model result, for in-session compare
 const outgoingItems = ref([])
+
+const handleClassifying = (value) => {
+  isClassifying.value = Boolean(value)
+  classifyingCount.value = Number(value) || 0
+}
+
+const destroyClassificationAnimation = () => {
+  if (classificationAnimInstance.value) {
+    classificationAnimInstance.value.destroy()
+    classificationAnimInstance.value = null
+  }
+}
+
+const startClassificationAnimation = () => {
+  if (!classificationAnimRef.value || classificationAnimInstance.value) return
+  classificationAnimInstance.value = lottie.loadAnimation({
+    container: classificationAnimRef.value,
+    renderer: 'svg',
+    loop: true,
+    autoplay: true,
+    animationData: fredThinkAnimation
+  })
+}
 
 // Persist disambiguation items in sessionStorage so they survive page reloads.
 // These are never written to the DB until the user resolves them, so without
@@ -33,6 +62,15 @@ watch(disambiguationItems, (val) => {
   try { sessionStorage.setItem('fred_disambiguations', JSON.stringify(val)) } catch {}
 }, { deep: true })
 
+watch(isClassifying, async (value) => {
+  if (value) {
+    await nextTick()
+    startClassificationAnimation()
+  } else {
+    destroyClassificationAnimation()
+  }
+})
+
 // Helper function to capitalize food names properly
 const capitalizeFoodName = (name) => {
   if (!name) return name
@@ -40,6 +78,24 @@ const capitalizeFoodName = (name) => {
   return name.split(' ').map(word => 
     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   ).join(' ')
+}
+
+const hoursSinceEntryDate = (entryDate) => {
+  if (!entryDate) return 0
+  const parsed = new Date(entryDate)
+  if (Number.isNaN(parsed.getTime())) return 0
+  const hours = (Date.now() - parsed.getTime()) / (1000 * 60 * 60)
+  return Math.max(0, Number(hours.toFixed(2)))
+}
+
+const formatTimeInFridge = (hours) => {
+  const safeHours = Math.max(0, Number(hours) || 0)
+  if (safeHours < 24) {
+    const roundedHours = Math.round(safeHours)
+    return `${roundedHours} hour${roundedHours === 1 ? '' : 's'}`
+  }
+  const roundedDays = Math.round(safeHours / 24)
+  return `${roundedDays} day${roundedDays === 1 ? '' : 's'}`
 }
 
 // Computed property to check if on inventory page
@@ -56,6 +112,8 @@ const loadPendingItems = async () => {
       detectedItems.value = pendingFoods.map(food => ({
         id: food.id,
         predicted_class: food.name,
+        prediction_source: food.predictionSource || null,
+        gemini_error: food.geminiError || null,
         category: food.foodGroup,
         packaging_type: food.packagingType,
         storage_location: food.storageLocation,
@@ -165,12 +223,16 @@ const handleFinishScanning = async (items) => {
       const payload = {
         name: item.predicted_class,
         foodGroup: item.category,
+        predictionSource: item.prediction_source || null,
+        geminiError: item.gemini_error || null,
         packagingType: item.packaging_type,
         storageLocation: item.storage_location,
         expirationDate: item.expiration_date || '',
         status: 'pending',
         confidence: item.confidence,
         top5Predictions: item.top5,
+        daysInFridge: 0,
+        cumulativeTempAbuse: 0,
         daysUntilSpoilage: parseInt(item.spoilage_parameters?.shelf_life_days) || 7,
         geminiSpoilageParams: item.spoilage_parameters || null,
         description: item.description || '',
@@ -254,6 +316,8 @@ const handleConfirm = async (updatedData) => {
         packagingType: updatedData.packaging,
         storageLocation: updatedData.storage,
         expirationDate: updatedData.expirationDate || '',
+        daysInFridge: (updatedData.timeInFridgeHours || 0) / 24,
+        cumulativeTempAbuse: updatedData.timeOutsideFridgeHours,
         status: 'pending', // Keep as pending until "Add to Inventory" is clicked
         confidence: updatedData.confidence
       }
@@ -279,6 +343,9 @@ const handleConfirm = async (updatedData) => {
               packaging_type: updatedData.packaging,
               storage_location: updatedData.storage,
               expiration_date: updatedData.expirationDate || '',
+              entry_date: new Date(Date.now() - ((updatedData.timeInFridgeHours || 0) * 60 * 60 * 1000)).toISOString(),
+              time_in_fridge: formatTimeInFridge(updatedData.timeInFridgeHours),
+              cumulative_temp_abuse: updatedData.timeOutsideFridgeHours,
               confidence: updatedData.confidence
             }
             return updatedItem
@@ -534,6 +601,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  destroyClassificationAnimation()
   window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
@@ -545,6 +613,12 @@ onUnmounted(() => {
       <SidebarTrigger class="sidebar-trigger" />
       
       <main>
+        <header class="global-header">
+          <RouterLink to="/" class="global-logo-link" aria-label="Go to home page">
+            <img :src="appLogo" alt="FRED logo" class="global-logo" />
+          </RouterLink>
+        </header>
+
         <!-- Pending Items Banner -->
         <div v-if="detectedItems.length > 0 || outgoingItems.length > 0 || disambiguationItems.length > 0" class="pending-banner">
           <div class="banner-content">
@@ -608,6 +682,7 @@ onUnmounted(() => {
       v-if="showCameraPopup"
       @close="closeCameraPopup"
       @finish="handleFinishScanning"
+      @classifying="handleClassifying"
     />
     
     <!-- Global Results Popup -->
@@ -616,10 +691,14 @@ onUnmounted(() => {
       :predicted-class="selectedItem.predicted_class"
       :confidence="selectedItem.confidence"
       :top5="selectedItem.top5"
+      :prediction-source="selectedItem.prediction_source"
+      :gemini-error="selectedItem.gemini_error"
       :category="selectedItem.category"
       :packaging-type="selectedItem.packaging_type"
       :storage-location="selectedItem.storage_location"
       :expiration-date="selectedItem.expiration_date"
+      :time-in-fridge-hours="hoursSinceEntryDate(selectedItem.entry_date)"
+      :time-outside-fridge-hours="Number(selectedItem.cumulative_temp_abuse ?? 0)"
       :notes="selectedItem.notes"
       :image-blob="selectedItem.imageBlob ?? null"
       :local-result="selectedItem.localResult ?? null"
@@ -644,8 +723,8 @@ onUnmounted(() => {
     <!-- Global AI Classification Loading Overlay -->
     <div v-if="isClassifying" class="ai-loading-overlay">
       <div class="ai-loading-content">
-        <div class="spinner"></div>
-        <p class="loading-text">Identifying item...</p>
+        <div ref="classificationAnimRef" class="classification-animation"></div>
+        <p class="loading-text">Identifying {{ classifyingCount === 1 ? 'item' : 'items' }}...</p>
       </div>
     </div>
   </SidebarProvider>
@@ -688,6 +767,35 @@ main {
   width: 100%;
 }
 
+.global-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem 0 1rem 0;
+}
+
+.global-logo {
+  width: min(420px, 62vw);
+  height: auto;
+  display: block;
+}
+
+.global-logo-link {
+  display: inline-flex;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.global-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: oklch(0.92 0.02 250);
+  text-align: center;
+}
+
 nav {
   position: fixed;
   top: 0;
@@ -728,6 +836,11 @@ nav {
   flex-direction: column;
   align-items: center;
   gap: 1.5rem;
+}
+
+.classification-animation {
+  width: min(380px, 78vw);
+  height: min(380px, 78vw);
 }
 
 .spinner {
@@ -940,6 +1053,10 @@ nav {
   main {
     padding: 1rem;
   }
+
+  .global-logo {
+    width: min(340px, 74vw);
+  }
 }
 
 @media (max-width: 480px) {
@@ -949,6 +1066,10 @@ nav {
 
   main {
     padding: 0.75rem;
+  }
+
+  .global-logo {
+    width: min(280px, 82vw);
   }
 }
 </style>

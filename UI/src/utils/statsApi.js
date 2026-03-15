@@ -4,20 +4,20 @@ const API_BASE_URL = 'http://localhost:5000/api'
 /**
  * Record the outcome of a food item
  * @param {string} itemId - The ID of the food item
- * @param {string} outcome - 'consumed' or 'wasted'
+ * @param {string} [outcome] - Optional explicit outcome ('consumed' or 'wasted')
  * @returns {Promise<void>}
  */
 export async function recordItemOutcome(itemId, outcome) {
   try {
+    const payload = { item_id: itemId }
+    if (outcome) payload.outcome = outcome
+
     const response = await fetch(`${API_BASE_URL}/stats/outcome`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        item_id: itemId,
-        outcome: outcome
-      })
+      body: JSON.stringify(payload)
     })
     
     if (!response.ok) {
@@ -79,5 +79,29 @@ export async function getMqHistory() {
   } catch (error) {
     console.error('Error fetching MQ history:', error)
     return []
+  }
+}
+
+/**
+ * Get dominant gas severity and top suspected contributors
+ * @returns {Promise<Object>} Gas contributor summary payload
+ */
+export async function getGasContributors() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stats/gas-contributors`)
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    console.error('Error fetching gas contributors:', error)
+    return {
+      connected: false,
+      severity: 'low',
+      message: 'No abnormal gases detected.',
+      details: '',
+      dominantSensors: [],
+      contributors: []
+    }
   }
 }

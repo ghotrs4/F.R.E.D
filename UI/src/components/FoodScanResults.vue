@@ -5,10 +5,20 @@ const props = defineProps({
   predictedClass: String,
   confidence: Number,
   top5: Array,
+  predictionSource: String,
+  geminiError: String,
   category: String,
   packagingType: String,
   storageLocation: String,
   expirationDate: String,
+  timeInFridgeHours: {
+    type: Number,
+    default: 0
+  },
+  timeOutsideFridgeHours: {
+    type: Number,
+    default: 0
+  },
   notes: String,
   imageBlob: Object,   // Blob from the camera capture, available for in-session scans
   localResult: Object  // Local ResNet18 result returned alongside the Gemini batch prediction
@@ -18,24 +28,42 @@ const isComparing   = ref(false)
 const compareResult = ref(null)
 const compareError  = ref(null)
 
+const GENERIC_GEMINI_UNAVAILABLE = 'Gemini is offline or took too long.'
+
 // Build the comparison panel immediately from the batch-time local result,
 // so no extra button click / second Gemini call is needed.
 const buildCompareFromProps = () => {
   if (!props.localResult) return
-  const geminiSide = {
-    predicted_class: props.predictedClass,
-    confidence: props.confidence,
-    top5: props.top5 ?? []
-  }
+  const geminiUnavailable = props.predictionSource !== 'gemini'
+  const geminiSide = geminiUnavailable
+    ? { error: GENERIC_GEMINI_UNAVAILABLE }
+    : {
+        predicted_class: props.predictedClass,
+        confidence: props.confidence,
+        top5: props.top5 ?? []
+      }
+
   const l = (props.localResult.predicted_class ?? '').toLowerCase()
   const g = (props.predictedClass ?? '').toLowerCase()
-  const agree = !!(l && g && (l.includes(g) || g.includes(l) || l === g))
+  const agree = !geminiUnavailable && !!(l && g && (l.includes(g) || g.includes(l) || l === g))
   compareResult.value = {
     local:     props.localResult,
     gemini:    geminiSide,
     agreement: agree
   }
 }
+
+const compareVerdictText = computed(() => {
+  if (!compareResult.value) return ''
+  if (compareResult.value.gemini?.error) return '⚠ Gemini unavailable'
+  return compareResult.value.agreement ? '✓ Models agree' : '✗ Models disagree'
+})
+
+const compareVerdictClass = computed(() => {
+  if (!compareResult.value) return 'verdict-disagree'
+  if (compareResult.value.gemini?.error) return 'verdict-unavailable'
+  return compareResult.value.agreement ? 'verdict-agree' : 'verdict-disagree'
+})
 
 const runComparison = async () => {
   if (!props.imageBlob || isComparing.value) return
@@ -50,7 +78,11 @@ const runComparison = async () => {
       body: formData
     })
     if (!response.ok) throw new Error(`Server error ${response.status}`)
-    compareResult.value = await response.json()
+    const result = await response.json()
+    if (result?.gemini?.error) {
+      result.gemini.error = GENERIC_GEMINI_UNAVAILABLE
+    }
+    compareResult.value = result
   } catch (err) {
     compareError.value = err.message
   } finally {
@@ -65,6 +97,8 @@ const foodCategory = ref('other')
 const packagingType = ref('sealed')
 const storageLocation = ref('regular')
 const expirationDate = ref('')
+const timeInFridgeHours = ref(0)
+const timeOutsideFridgeHours = ref(0)
 const selectedPrediction = ref(props.predictedClass)
 const selectedConfidence = ref(props.confidence)
 
@@ -138,6 +172,13 @@ onMounted(() => {
   if (props.expirationDate) {
     expirationDate.value = props.expirationDate
   }
+
+  timeInFridgeHours.value = Number.isFinite(props.timeInFridgeHours)
+    ? Math.max(0, props.timeInFridgeHours)
+    : 0
+  timeOutsideFridgeHours.value = Number.isFinite(props.timeOutsideFridgeHours)
+    ? Math.max(0, props.timeOutsideFridgeHours)
+    : 0
 })
 
 // Watch for prop changes and update form fields
@@ -173,6 +214,14 @@ watch(() => props.expirationDate, (newVal) => {
   expirationDate.value = newVal || ''
 })
 
+watch(() => props.timeInFridgeHours, (newVal) => {
+  timeInFridgeHours.value = Number.isFinite(newVal) ? Math.max(0, newVal) : 0
+})
+
+watch(() => props.timeOutsideFridgeHours, (newVal) => {
+  timeOutsideFridgeHours.value = Number.isFinite(newVal) ? Math.max(0, newVal) : 0
+})
+
 watch(() => props.confidence, (newVal) => {
   if (newVal) {
     selectedConfidence.value = newVal
@@ -202,6 +251,8 @@ const confirmChanges = () => {
     packaging: packagingType.value,
     storage: storageLocation.value,
     expirationDate: expirationDate.value || null,
+    timeInFridgeHours: Math.max(0, Number(timeInFridgeHours.value) || 0),
+    timeOutsideFridgeHours: Math.max(0, Number(timeOutsideFridgeHours.value) || 0),
     confidence: selectedConfidence.value
   })
 }
@@ -267,22 +318,25 @@ const removeItem = () => {
 
             <div class="compare-grid">
               <!-- Gemini column -->
-              <div class="compare-col">
+              <div class="compare-col" :class="{ 'compare-col-error': compareResult.gemini?.error }">
                 <div class="compare-col-header gemini-header">Gemini</div>
-                <div class="compare-top1">{{ compareResult.gemini?.predicted_class ?? predictedClass }}</div>
-                <div class="compare-conf" :style="{ color: confidenceColor }">
-                  {{ (compareResult.gemini?.confidence ?? confidence).toFixed(1) }}%
-                </div>
-                <div class="compare-list">
-                  <div
-                    v-for="p in (compareResult.gemini?.top5 ?? top5 ?? []).slice(0, 5)"
-                    :key="p.class"
-                    class="compare-row"
-                  >
-                    <span class="compare-name">{{ p.class }}</span>
-                    <span class="compare-pct">{{ typeof p.confidence === 'number' ? p.confidence.toFixed(1) : p.confidence }}%</span>
+                <template v-if="!compareResult.gemini?.error">
+                  <div class="compare-top1">{{ compareResult.gemini?.predicted_class ?? predictedClass }}</div>
+                  <div class="compare-conf" :style="{ color: confidenceColor }">
+                    {{ (compareResult.gemini?.confidence ?? confidence).toFixed(1) }}%
                   </div>
-                </div>
+                  <div class="compare-list">
+                    <div
+                      v-for="p in (compareResult.gemini?.top5 ?? top5 ?? []).slice(0, 5)"
+                      :key="p.class"
+                      class="compare-row"
+                    >
+                      <span class="compare-name">{{ p.class }}</span>
+                      <span class="compare-pct">{{ typeof p.confidence === 'number' ? p.confidence.toFixed(1) : p.confidence }}%</span>
+                    </div>
+                  </div>
+                </template>
+                <p v-else class="compare-unavailable">{{ compareResult.gemini.error }}</p>
               </div>
 
               <!-- Local model column -->
@@ -306,11 +360,8 @@ const removeItem = () => {
               </div>
             </div>
 
-            <div
-              class="compare-verdict"
-              :class="compareResult.agreement ? 'verdict-agree' : 'verdict-disagree'"
-            >
-              {{ compareResult.agreement ? '✓ Models agree' : '✗ Models disagree' }}
+            <div class="compare-verdict" :class="compareVerdictClass">
+              {{ compareVerdictText }}
             </div>
           </div>
         </div>
@@ -370,6 +421,30 @@ const removeItem = () => {
                 type="date" 
                 class="form-input"
                 id="date"
+              />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Time In Fridge (hours)</label>
+              <input
+                v-model.number="timeInFridgeHours"
+                type="number"
+                min="0"
+                step="0.1"
+                class="form-input"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Time Outside Fridge (hours)</label>
+              <input
+                v-model.number="timeOutsideFridgeHours"
+                type="number"
+                min="0"
+                step="0.1"
+                class="form-input"
               />
             </div>
           </div>
@@ -825,5 +900,11 @@ const removeItem = () => {
   background: oklch(0.25 0.06 25);
   color: oklch(0.75 0.18 25);
   border: 1px solid oklch(0.4 0.1 25);
+}
+
+.verdict-unavailable {
+  background: oklch(0.25 0.05 85);
+  color: oklch(0.82 0.14 85);
+  border: 1px solid oklch(0.45 0.1 85);
 }
 </style>

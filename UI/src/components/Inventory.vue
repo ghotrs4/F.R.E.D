@@ -56,7 +56,8 @@ const editedFood = ref({
 const newFood = ref({
   name: '',
   foodGroup: 'other',
-  daysInFridge: 0,
+  timeInFridgeHours: 0,
+  timeOutsideFridgeHours: 0,
   packagingType: 'sealed',
   storageLocation: 'regular',
   expirationDate: ''
@@ -415,6 +416,14 @@ const abuseSummary = (cumulativeHours, tempFactor) => {
   return `${hStr} total — temperature normalized`
 }
 
+const gasFactorStatus = (metadata) => {
+  if (!metadata || metadata.gas_factor === undefined || metadata.gas_factor === null) return ''
+  if (metadata.gas_status === 'high') return '⚠ High gas detected'
+  if (metadata.gas_status === 'elevated') return '⚠ Elevated gas detected'
+  if (metadata.gas_status === 'low') return '✓ Gas levels normal'
+  return ''
+}
+
 const formatAbuseHours = (hours) => {
   if (!hours || hours <= 0) return ''
   if (hours < 1) return `${Math.round(hours * 60)}m`
@@ -431,7 +440,8 @@ const closeAddPopup = () => {
   newFood.value = {
     name: '',
     foodGroup: 'other',
-    daysInFridge: 0,
+    timeInFridgeHours: 0,
+    timeOutsideFridgeHours: 0,
     packagingType: 'sealed',
     storageLocation: 'regular',
     expirationDate: ''
@@ -504,14 +514,12 @@ const closeDeleteConfirm = () => {
   showDeleteConfirm.value = false
 }
 
-const deleteItemOutcome = ref('consumed') // Track why the item is being removed
-
 const confirmDelete = async () => {
   try {
     if (!selectedCard.value) return
     
-    // Record the outcome before deleting
-    await recordItemOutcome(selectedCard.value.id, deleteItemOutcome.value)
+    // Record inferred outcome before deleting (backend infers from freshness).
+    await recordItemOutcome(selectedCard.value.id)
     
     // Delete the food item via API
     await deleteFood(selectedCard.value.id)
@@ -528,7 +536,6 @@ const confirmDelete = async () => {
     showDeleteConfirm.value = false
     showPopup.value = false
     selectedCard.value = null
-    deleteItemOutcome.value = 'consumed' // Reset to default
   } catch (error) {
     console.error('Error deleting food:', error)
     alert('Failed to delete food item. Please try again.')
@@ -556,7 +563,8 @@ const handleAddFood = async () => {
       packagingType: newFood.value.packagingType,
       storageLocation: newFood.value.storageLocation,
       expirationDate: newFood.value.expirationDate,
-      daysInFridge: newFood.value.daysInFridge,
+      daysInFridge: (newFood.value.timeInFridgeHours || 0) / 24,
+      cumulativeTempAbuse: newFood.value.timeOutsideFridgeHours,
       freshnessScore: 100,
       daysUntilSpoilage: 7
     })
@@ -980,6 +988,13 @@ const getFreshnessColor = (score) => {
                 × {{ selectedCard.spoilageMetadata.packaging_factor?.toFixed(3) }}
               </span>
             </div>
+            <div v-if="selectedCard.spoilageMetadata.gas_factor !== undefined" class="breakdown-row">
+              <span class="breakdown-label">🧪 Gas factor</span>
+              <span class="breakdown-value" :class="factorClass(selectedCard.spoilageMetadata.gas_factor)">
+                × {{ selectedCard.spoilageMetadata.gas_factor?.toFixed(3) }}
+                <span class="factor-note">{{ gasFactorStatus(selectedCard.spoilageMetadata) }}</span>
+              </span>
+            </div>
           </div>
 
           <div class="detail-item">
@@ -1074,12 +1089,24 @@ const getFreshnessColor = (score) => {
             </div>
             
             <div class="form-group">
-              <label for="daysInFridge">Days in Fridge</label>
-              <input 
-                id="daysInFridge"
-                v-model.number="newFood.daysInFridge" 
-                type="number" 
+              <label for="timeInFridgeHours">Time in Fridge (hours)</label>
+              <input
+                id="timeInFridgeHours"
+                v-model.number="newFood.timeInFridgeHours"
+                type="number"
                 min="0"
+                step="0.1"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="timeOutsideFridgeHours">Time Outside Fridge (hours)</label>
+              <input
+                id="timeOutsideFridgeHours"
+                v-model.number="newFood.timeOutsideFridgeHours"
+                type="number"
+                min="0"
+                step="0.1"
               />
             </div>
             
@@ -1131,25 +1158,7 @@ const getFreshnessColor = (score) => {
           <h3>Remove From Inventory</h3>
         </div>
         <div class="confirm-body">
-          <p>What happened to this item?</p>
           <p class="item-name">{{ selectedCard?.name }}</p>
-          
-          <div class="outcome-options">
-            <label class="outcome-option">
-              <input type="radio" v-model="deleteItemOutcome" value="consumed" />
-              <span class="outcome-label">
-                <span class="outcome-icon">✅</span>
-                <span>Consumed</span>
-              </span>
-            </label>
-            <label class="outcome-option">
-              <input type="radio" v-model="deleteItemOutcome" value="wasted" />
-              <span class="outcome-label">
-                <span class="outcome-icon">❌</span>
-                <span>Wasted/Spoiled</span>
-              </span>
-            </label>
-          </div>
         </div>
         <div class="confirm-actions">
           <button type="button" class="confirm-cancel-button" @click="closeDeleteConfirm">Cancel</button>
@@ -1362,8 +1371,12 @@ const getFreshnessColor = (score) => {
   border-radius: 12px;
   padding: 1.25rem;
   position: relative;
-  grid-column: span 2;
-  min-width: 0;
+  /* Match food-card sizing: min 2 cards wide, max 4 cards wide. */
+  grid-column: span 4;
+  width: 100%;
+  min-width: min(100%, calc((300px * 2) + 1.5rem));
+  max-width: calc((300px * 4) + (1.5rem * 3));
+  justify-self: center;
 }
 
 .disambiguation-header {
@@ -2418,6 +2431,10 @@ const getFreshnessColor = (score) => {
     gap: 1.25rem;
   }
 
+  .disambiguation-card {
+    grid-column: span 3;
+  }
+
   .controls-container {
     flex-wrap: wrap;
     /* gap: 1rem; */
@@ -2439,6 +2456,10 @@ const getFreshnessColor = (score) => {
   .disambiguation-row {
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
+  }
+
+  .disambiguation-card {
+    grid-column: span 2;
   }
 
   .controls-container {

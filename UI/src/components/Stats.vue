@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getSensorData } from '../utils/sensorApi'
 import { loadFoodsFromCSV } from '../utils/csvParser'
 import { getWasteHistory, getTemperatureHistory, getMqHistory } from '../utils/statsApi'
+import { MQ_SAFE_RANGES, classifyMqReading } from '../utils/mqSensorConfig'
 import TemperatureChart from './TemperatureChart.vue'
 import HumidityChart from './HumidityChart.vue'
 import MqChart from './MqChart.vue'
@@ -86,6 +87,21 @@ const getReadingStatusColor = (value, min, max, connected) => {
   if (!connected) return 'oklch(0.6 0 0)'
   return value >= min && value <= max ? '#228B22' : '#8B0000'
 }
+
+const mqStatusText = computed(() => {
+  if (!sensorsConnected.value) return '--'
+  const latest = mqHistory.value.length ? mqHistory.value[mqHistory.value.length - 1] : null
+  if (!latest) return '--'
+
+  let hasElevated = false
+  for (const sensorId of Object.keys(MQ_SAFE_RANGES).map(Number)) {
+    const status = classifyMqReading(sensorId, latest[`mq${sensorId}`])
+    if (status === 'high') return 'High levels of gases detected'
+    if (status === 'elevated') hasElevated = true
+  }
+
+  return hasElevated ? 'Elevated levels of gases detected' : 'No abnormal gases detected'
+})
 
 onMounted(async () => {
   // Fetch initial sensor data
@@ -182,10 +198,10 @@ onUnmounted(() => {
           <div class="reading-icon">🧪</div>
           <div class="reading-content">
             <span class="reading-label">Gas Sensors (MQ)</span>
-            <span class="reading-value-large" style="font-size: 1rem;">{{ sensorsConnected ? 'Active' : '--' }}</span>
+            <span class="reading-value-large" style="font-size: 1rem;">{{ mqStatusText }}</span>
           </div>
         </div>
-        <MqChart :data="mqHistory" />
+        <MqChart :data="mqHistory" :connected="sensorsConnected" />
       </div>
       <div class="sensor-status">
         <span class="status-indicator" :class="{ active: sensorsConnected, disconnected: !sensorsConnected }"></span>

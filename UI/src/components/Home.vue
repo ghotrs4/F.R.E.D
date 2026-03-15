@@ -3,7 +3,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadFoodsFromCSV } from '../utils/csvParser'
 import { getSensorData } from '../utils/sensorApi'
-import { getWasteHistory, getTemperatureHistory } from '../utils/statsApi'
+import { getWasteHistory, getTemperatureHistory, getMqHistory, getGasContributors } from '../utils/statsApi'
+import { MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET, classifyMqReading } from '../utils/mqSensorConfig'
 
 const router = useRouter()
 
@@ -22,12 +23,22 @@ const wasteHistory = ref([])
 const recipes = ref([])
 const loadingRecipes = ref(false)
 const temperatureHistory = ref([])
+const mqHistory = ref([])
+const gasContributorState = ref({
+  connected: false,
+  severity: 'low',
+  message: 'No abnormal gases detected.',
+  details: '',
+  dominantSensors: [],
+  contributors: []
+})
 
 const SAFE_TEMP_MIN = 1
 const SAFE_TEMP_MAX = 8
 const SAFE_HUMIDITY_MIN = 20
 const SAFE_HUMIDITY_MAX = 95
 const ENV_ALERT_MIN_MINUTES = 10
+
 
 const wasteReduced = computed(() => {
   const last7Days = wasteHistory.value.slice(-7)
@@ -95,6 +106,31 @@ const foodAlerts = computed(() => {
   })
   
   return alertList
+})
+
+const gasAlerts = computed(() => {
+  const severity = gasContributorState.value.severity
+  if (severity === 'high') {
+    return [{
+      type: 'critical',
+      category: 'environment',
+      message: gasContributorState.value.message,
+      details: gasContributorState.value.details,
+      contributors: gasContributorState.value.contributors || [],
+    }]
+  }
+
+  if (severity === 'elevated') {
+    return [{
+      type: 'warning',
+      category: 'environment',
+      message: gasContributorState.value.message,
+      details: gasContributorState.value.details,
+      contributors: gasContributorState.value.contributors || [],
+    }]
+  }
+
+  return []
 })
 
 const formatDuration = (minutes) => {
@@ -182,7 +218,7 @@ const environmentAlerts = computed(() => {
   return result
 })
 
-const alerts = computed(() => [...environmentAlerts.value, ...foodAlerts.value])
+const alerts = computed(() => [...environmentAlerts.value, ...gasAlerts.value, ...foodAlerts.value])
 
 const handleFoodClick = (foodId) => {
   console.log(`Food ${foodId} clicked`)
@@ -216,6 +252,21 @@ const getReadingStatusColor = (value, min, max, connected) => {
   return value >= min && value <= max ? '#228B22' : '#8B0000'
 }
 
+const mqStatusText = computed(() => {
+  if (!sensorConnected.value) return '--'
+  const latest = mqHistory.value.length ? mqHistory.value[mqHistory.value.length - 1] : null
+  if (!latest) return '--'
+
+  let hasElevated = false
+  for (const sensorId of Object.keys(MQ_SAFE_RANGES).map(Number)) {
+    const status = classifyMqReading(sensorId, latest[`mq${sensorId}`])
+    if (status === 'high') return 'High'
+    if (status === 'elevated') hasElevated = true
+  }
+
+  return hasElevated ? 'Medium' : 'Low'
+})
+
 const navigateToInventory = () => {
   router.push('/inventory')
 }
@@ -243,6 +294,7 @@ let foodsUpdateInterval
 let sensorUpdateInterval
 let historyUpdateInterval
 let temperatureHistoryUpdateInterval
+let mqUpdateInterval
 
 const handleFoodAdded = async () => {
   // Refresh foods list when a new item is added via global scanner
@@ -265,6 +317,8 @@ onMounted(async () => {
   // Fetch initial history data
   wasteHistory.value = await getWasteHistory()
   temperatureHistory.value = await getTemperatureHistory()
+  mqHistory.value = await getMqHistory()
+  gasContributorState.value = await getGasContributors()
   
   // Load recipes from localStorage (no API calls)
   // Recipes are cached by the Recipes page
@@ -313,6 +367,15 @@ onMounted(async () => {
   temperatureHistoryUpdateInterval = setInterval(async () => {
     temperatureHistory.value = await getTemperatureHistory()
   }, 30000)
+
+  mqUpdateInterval = setInterval(async () => {
+    const [history, gasContributors] = await Promise.all([
+      getMqHistory(),
+      getGasContributors()
+    ])
+    mqHistory.value = history
+    gasContributorState.value = gasContributors
+  }, 5000)
 })
 
 onUnmounted(() => {
@@ -323,6 +386,7 @@ onUnmounted(() => {
   clearInterval(sensorUpdateInterval)
   clearInterval(historyUpdateInterval)
   clearInterval(temperatureHistoryUpdateInterval)
+  clearInterval(mqUpdateInterval)
 })
 </script>
 
@@ -367,6 +431,10 @@ onUnmounted(() => {
         <div class="reading-item">
           <span class="reading-label">Humidity</span>
           <span class="reading-value" :style="{ color: getReadingStatusColor(humidity, SAFE_HUMIDITY_MIN, SAFE_HUMIDITY_MAX, sensorConnected) }">{{ sensorConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
+        </div>
+        <div class="reading-item">
+          <span class="reading-label">Gas Levels</span>
+          <span class="reading-value">{{ mqStatusText }}</span>
         </div>
         <div class="reading-item">
           <span class="reading-label">Waste Reduced</span>
@@ -456,6 +524,20 @@ onUnmounted(() => {
                 <template v-else-if="alert.details">
                   <span>{{ alert.details }}</span>
                 </template>
+              </div>
+              <div v-if="alert.contributors && alert.contributors.length" class="gas-contributors">
+                <p class="contributors-title">Most likely contributors</p>
+                <div
+                  v-for="(contributor, cIdx) in alert.contributors"
+                  :key="`${contributor.foodName}-${cIdx}`"
+                  class="contributor-item"
+                >
+                  <div class="contributor-main">
+                    <span class="contributor-name">{{ cIdx + 1 }}. {{ contributor.foodName }}</span>
+                    <span class="contributor-confidence">{{ contributor.confidence }}%</span>
+                  </div>
+                  <div class="contributor-reasons">{{ contributor.reasons.join(' • ') }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -754,6 +836,50 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.gas-contributors {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed oklch(0.35 0 0);
+}
+
+.contributors-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.8rem;
+  color: oklch(0.75 0 0);
+  font-weight: 600;
+}
+
+.contributor-item {
+  margin-bottom: 0.5rem;
+  text-align: left;
+}
+
+.contributor-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.contributor-name {
+  color: oklch(0.9 0 0);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.contributor-confidence {
+  color: oklch(0.8 0.12 160);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.contributor-reasons {
+  color: oklch(0.72 0 0);
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+  text-align: left;
 }
 
 .alert-item {

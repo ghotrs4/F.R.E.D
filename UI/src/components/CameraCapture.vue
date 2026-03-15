@@ -6,7 +6,7 @@
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
-const emit = defineEmits(['close', 'finish'])
+const emit = defineEmits(['close', 'finish', 'classifying'])
 
 const videoRef = ref(null)
 const canvasRef = ref(null)
@@ -129,6 +129,7 @@ const finishScanning = async () => {
   }
   
   isBatchProcessing.value = true
+  emit('classifying', capturedBlobs.value.length)
   batchProgress.value = { current: 0, total: capturedBlobs.value.length }
   stopCamera()
   
@@ -169,6 +170,7 @@ const finishScanning = async () => {
     console.error('Batch classification error:', err)
     emit('finish', [])
   } finally {
+    emit('classifying', false)
     isBatchProcessing.value = false
   }
 }
@@ -344,6 +346,8 @@ const close = () => {
 }
 
 const handleKeyDown = (event) => {
+  if (isBatchProcessing.value) return
+
   if (event.key === 'Escape') {
     close()
   } else if (event.key === 'Enter' && !isBatchProcessing.value) {
@@ -386,7 +390,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="camera-popup-overlay" @click="close">
+  <div v-if="!isBatchProcessing" class="camera-popup-overlay" @click="close">
     <div class="camera-popup-content" @click.stop>
       <div class="camera-header">
         <h2>Scan Food Item</h2>

@@ -58,5 +58,85 @@
     "optimal_humidity": 70,
     "humidity_sensitivity": 0.8,
     "optimal_packaging": "sealed"
+  },
+  "milk chocolate with hazelnuts|other|boxed": {
+    "food_name": "milk chocolate with hazelnuts",
+    "shelf_life_days": 180,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 4.0,
+    "optimal_humidity": 55,
+    "humidity_sensitivity": 1.0,
+    "optimal_packaging": "boxed"
+  },
+  "dark chocolate with hazelnuts|other|boxed": {
+    "food_name": "dark chocolate with hazelnuts",
+    "shelf_life_days": 210,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 2.5,
+    "temp_abuse_threshold": 3.0,
+    "optimal_humidity": 55,
+    "humidity_sensitivity": 1.5,
+    "optimal_packaging": "boxed"
+  },
+  "milk chocolate with roasted hazelnuts|other|boxed": {
+    "food_name": "milk chocolate with roasted hazelnuts",
+    "shelf_life_days": 180,
+    "optimal_temp": 2.0,
+    "temp_sensitivity": 2.0,
+    "temp_abuse_threshold": 5.0,
+    "optimal_humidity": 55,
+    "humidity_sensitivity": 1.0,
+    "optimal_packaging": "sealed"
+  },
+  "chocolate bar|other|boxed": {
+    "food_name": "chocolate bar (category: other, packaging: boxed)",
+    "shelf_life_days": 180,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 4.0,
+    "optimal_humidity": 50,
+    "humidity_sensitivity": 1.0,
+    "optimal_packaging": "sealed"
+  },
+  "milk chocolate roasted hazelnuts|other|boxed": {
+    "food_name": "Milk Chocolate Roasted Hazelnuts",
+    "shelf_life_days": 225,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 2.0,
+    "temp_abuse_threshold": 4.0,
+    "optimal_humidity": 55,
+    "humidity_sensitivity": 1.5,
+    "optimal_packaging": "sealed"
+  },
+  "milk chocolate|other|boxed": {
+    "food_name": "Milk Chocolate",
+    "shelf_life_days": 365,
+    "optimal_temp": 2.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 4.0,
+    "optimal_humidity": 50,
+    "humidity_sensitivity": 1.5,
+    "optimal_packaging": "boxed"
+  },
+  "gnocchi|prepared|loose": {
+    "food_name": "Gnocchi (category: prepared, packaging: loose)",
+    "shelf_life_days": 3,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 2.0,
+    "temp_abuse_threshold": 2.0,
+    "optimal_humidity": 75,
+    "humidity_sensitivity": 1.2,
+    "optimal_packaging": "sealed"
+  },
+  "coffee mug|other|loose": {
+    "food_name": "coffee mug",
+    "shelf_life_days": null,
+    "optimal_temp": null,
+    "temp_sensitivity": null,
+    "temp_abuse_threshold": null,
+    "optimal_humidity": null,
+    "humidity_sensitivity": null,
+    "optimal_packaging": "loose"
   }
 }

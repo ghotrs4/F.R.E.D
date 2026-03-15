@@ -6,7 +6,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from spoilage_algorithm import predict_spoilage
+from spoilage_algorithm import predict_spoilage, predict_gas_contributors, MQ_HIGH_THRESHOLD_OFFSET
 from sensor_interface import get_sensor
 import google.genai as genai
 from google.genai import types
@@ -29,6 +29,7 @@ except ImportError as _e:
 load_dotenv()
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB max upload
 CORS(app)  # Enable CORS for frontend connection
 
 # Spoonacular API configuration
@@ -37,6 +38,108 @@ SPOONACULAR_API_KEY = os.environ.get('SPOONACULAR_API_KEY')
 # Gemini API configuration
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+
+def _get_timeout_seconds(env_name, default_seconds):
+    raw_value = os.environ.get(env_name)
+    if raw_value is None:
+        return default_seconds
+    try:
+        return max(0.1, float(raw_value))
+    except Exception:
+        return default_seconds
+
+
+_GEMINI_REQUEST_TIMEOUT_SECONDS = _get_timeout_seconds('GEMINI_REQUEST_TIMEOUT_SECONDS', 4.0)
+
+
+def _run_with_timeout(func, timeout_seconds):
+    """Run a blocking function with a soft timeout using a daemon thread."""
+    outcome = {}
+
+    def _target():
+        try:
+            outcome['value'] = func()
+        except Exception as exc:
+            outcome['error'] = exc
+
+    worker = threading.Thread(target=_target, daemon=True, name='gemini-request')
+    worker.start()
+    worker.join(timeout_seconds)
+
+    if worker.is_alive():
+        raise TimeoutError(f'Gemini request timed out after {timeout_seconds:.1f}s')
+    if 'error' in outcome:
+        raise outcome['error']
+    return outcome.get('value')
+
+
+def _extract_json_payload(text):
+    """Extract raw JSON text from model output that may be wrapped in markdown fences."""
+    if not text:
+        return ''
+    result_text = text
+    if '```json' in result_text:
+        result_text = result_text.split('```json', 1)[1].split('```', 1)[0]
+    elif '```' in result_text:
+        result_text = result_text.split('```', 1)[1].split('```', 1)[0]
+    return result_text.strip()
+
+
+def _build_local_primary_result(local_result):
+    """Map local model output to the same schema the frontend expects from Gemini."""
+    if not local_result or not local_result.get('predicted_class'):
+        return {
+            'predicted_class': 'No Food Detected',
+            'confidence': 0,
+            'category': 'other',
+            'packaging_type': 'sealed',
+            'storage_location': 'regular',
+            'expiration_date': None,
+            'description': '',
+            'notes': '',
+            'spoilage_parameters': None,
+            'top5': []
+        }
+
+    return {
+        'predicted_class': local_result.get('predicted_class', 'Unknown'),
+        'confidence': local_result.get('confidence', 0),
+        'category': 'other',
+        'packaging_type': 'sealed',
+        'storage_location': 'regular',
+        'expiration_date': None,
+        'description': '',
+        'notes': '',
+        'spoilage_parameters': None,
+        'top5': local_result.get('top5', [])
+    }
+
+
+def _attach_grounded_spoilage_params(results):
+    """Populate spoilage_parameters from grounded cache/API for detected foods."""
+    detected_foods = [
+        {
+            'name': r['predicted_class'],
+            'category': r.get('category', 'other') or 'other',
+            'packaging_type': r.get('packaging_type', 'sealed') or 'sealed'
+        }
+        for r in results
+        if r.get('predicted_class') and r['predicted_class'].lower() != 'no food detected'
+    ]
+    if not detected_foods:
+        return
+
+    grounded_params = get_grounded_spoilage_params(detected_foods)
+    param_keys = [
+        'shelf_life_days', 'optimal_temp', 'temp_sensitivity',
+        'temp_abuse_threshold', 'optimal_humidity', 'humidity_sensitivity', 'optimal_packaging'
+    ]
+    for result in results:
+        food_name = result.get('predicted_class', '').lower()
+        if food_name in grounded_params:
+            gp = grounded_params[food_name]
+            result['spoilage_parameters'] = {k: gp[k] for k in param_keys if k in gp}
 
 # ---------------------------------------------------------------------------
 # Shelf-life parameter cache
@@ -120,13 +223,17 @@ Return ONLY a JSON array with exactly {len(uncached)} objects, one per food in t
 ]"""
 
     try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0,
-                response_mime_type='application/json'
+        response = _run_with_timeout(
+            lambda: gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    response_mime_type='application/json'
+                )
             )
+            ,
+            _GEMINI_REQUEST_TIMEOUT_SECONDS
         )
         params_list = json.loads(response.text)
         # Use positional zip — the prompt guarantees same order as input.
@@ -149,10 +256,132 @@ Return ONLY a JSON array with exactly {len(uncached)} objects, one per food in t
 # Path to the CSV database
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'database.csv')
 ENV_ALERTS_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'environment_alerts.csv')
+OUTCOME_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'item_outcomes.csv')
 
 # Lock that serialises every CSV read-modify-write cycle.
 # Prevents file truncation races when multiple requests arrive simultaneously.
 _csv_lock = threading.Lock()
+
+_OUTCOME_FIELDNAMES = [
+    'item_id',
+    'food_name',
+    'outcome',
+    'outcome_date',
+    'freshness_at_outcome',
+    'days_tracked',
+    'source'
+]
+
+
+def _append_outcome_record(item_id, food_name, outcome, freshness_at_outcome=0, days_tracked=0, source='manual'):
+    """Append a single outcome record, creating/upgrading the CSV schema if needed."""
+    rows = []
+
+    if os.path.exists(OUTCOME_PATH):
+        with open(OUTCOME_PATH, 'r', newline='', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            existing_fields = list(reader.fieldnames or [])
+            merged_fields = existing_fields[:]
+            for f in _OUTCOME_FIELDNAMES:
+                if f not in merged_fields:
+                    merged_fields.append(f)
+
+            for row in reader:
+                normalized = {field: row.get(field, '') for field in merged_fields}
+                if 'source' not in existing_fields:
+                    normalized['source'] = row.get('source', '')
+                rows.append(normalized)
+    else:
+        merged_fields = _OUTCOME_FIELDNAMES[:]
+
+    rows.append({
+        'item_id': item_id,
+        'food_name': food_name,
+        'outcome': outcome,
+        'outcome_date': datetime.now().isoformat(),
+        'freshness_at_outcome': freshness_at_outcome,
+        'days_tracked': days_tracked,
+        'source': source
+    })
+
+    with open(OUTCOME_PATH, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=merged_fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _revoke_scan_outcome(item_id):
+    """Remove scan-generated provisional outcomes for an item when it re-enters."""
+    if not os.path.exists(OUTCOME_PATH):
+        return 0
+
+    removed = 0
+    kept_rows = []
+
+    with open(OUTCOME_PATH, 'r', newline='', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        fieldnames = list(reader.fieldnames or _OUTCOME_FIELDNAMES)
+        if 'source' not in fieldnames:
+            fieldnames.append('source')
+
+        for row in reader:
+            normalized = {field: row.get(field, '') for field in fieldnames}
+            if normalized.get('item_id') == item_id and normalized.get('source') == 'scan_outgoing':
+                removed += 1
+                continue
+            kept_rows.append(normalized)
+
+    with open(OUTCOME_PATH, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(kept_rows)
+
+    return removed
+
+
+def _revoke_latest_outcome(item_id):
+    """Remove the most recent outcome row for an item when re-entry is confirmed."""
+    if not os.path.exists(OUTCOME_PATH):
+        return 0
+
+    with open(OUTCOME_PATH, 'r', newline='', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        fieldnames = list(reader.fieldnames or _OUTCOME_FIELDNAMES)
+        if 'source' not in fieldnames:
+            fieldnames.append('source')
+        rows = [{field: row.get(field, '') for field in fieldnames} for row in reader]
+
+    target_idx = None
+    target_ts = ''
+    for idx, row in enumerate(rows):
+        if row.get('item_id') != item_id:
+            continue
+        ts = row.get('outcome_date', '')
+        if target_idx is None or ts >= target_ts:
+            target_idx = idx
+            target_ts = ts
+
+    if target_idx is None:
+        return 0
+
+    rows.pop(target_idx)
+    with open(OUTCOME_PATH, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    return 1
+
+
+def _scan_outcome_from_freshness(freshness):
+    """Classify scan-confirmed outgoing items based on freshness.
+
+    > 0 means item was likely still usable (consumed); 0 or below is wasted.
+    """
+    try:
+        return 'consumed' if float(freshness) > 0 else 'wasted'
+    except Exception:
+        return 'wasted'
 
 # ---------------------------------------------------------------------------
 # Environment monitoring — thresholds for "unsafe fridge conditions"
@@ -332,10 +561,17 @@ def read_foods():
     if sensor.is_connected():
         current_temp = sensor.get_temperature()
         current_humidity = sensor.get_humidity()
+        mq_ids = [2, 3, 4, 5, 8, 9, 135]
+        current_mq_readings = {}
+        for sid in mq_ids:
+            val = sensor.get_mq_reading(sid)
+            if val is not None:
+                current_mq_readings[sid] = val
     else:
         # Assume safe middle-ground values when disconnected
         current_temp = 4.0
         current_humidity = 50.0
+        current_mq_readings = None
 
     # Incremental temperature-abuse accounting.
     # Every time read_foods() runs while the fridge is above the unsafe threshold,
@@ -399,7 +635,8 @@ def read_foods():
                     food_name=row['food_name'] if row['food_name'] else '',
                     storage_location=row.get('storage_location', 'regular'),
                     gemini_shelf_life_days=gemini_shelf_life,
-                    gemini_params=gemini_params
+                    gemini_params=gemini_params,
+                    mq_readings=current_mq_readings
                 )
 
                 # Persist updated values back into the row dict (written to CSV below)
@@ -425,6 +662,8 @@ def read_foods():
                     'spoilageMetadata': prediction.get('metadata', {}),
                     'confidence': float(row['confidence']) if row.get('confidence') else None,
                     'top5Predictions': json.loads(row['top5_predictions']) if row.get('top5_predictions') else [],
+                    'predictionSource': row.get('prediction_source') or None,
+                    'geminiError': row.get('gemini_error') or None,
                     'description': row.get('description', ''),
                     'entryDate': row.get('entry_date', ''),
                     'removedAt': '',
@@ -471,18 +710,30 @@ def _trim_history_file(filepath: str, fieldnames: list):
     try:
         cutoff = datetime.now() - timedelta(hours=12)
         recent = []
+        total_rows = 0
         with open(filepath, 'r', newline='', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                total_rows += 1
                 try:
                     if datetime.fromisoformat(row['timestamp']) >= cutoff:
                         recent.append(row)
                 except Exception:
-                    pass
-        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                    # Preserve malformed rows instead of dropping them silently.
+                    recent.append(row)
+
+        # Safety guard: never collapse a non-empty history file to header-only.
+        # If there are no recent rows, keep the current file as-is.
+        if total_rows > 0 and len(recent) == 0:
+            print(f'History trim skipped for {filepath}: no recent rows found')
+            return
+
+        tmp_path = f"{filepath}.tmp"
+        with open(tmp_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(recent)
+        os.replace(tmp_path, filepath)
     except Exception as e:
         print(f'Error trimming history file {filepath}: {e}')
 
@@ -567,6 +818,10 @@ def write_foods(foods):
                     fieldnames.append('description')
                 if 'removed_at' not in fieldnames:
                     fieldnames.append('removed_at')
+                if 'prediction_source' not in fieldnames:
+                    fieldnames.append('prediction_source')
+                if 'gemini_error' not in fieldnames:
+                    fieldnames.append('gemini_error')
                 for row in reader:
                     existing_data[row['item_id']] = row
 
@@ -601,6 +856,22 @@ def write_foods(foods):
                         existing_data[item_id]['top5_predictions'] = json.dumps(food['top5Predictions']) if food['top5Predictions'] else ''
                     if 'description' in food:
                         existing_data[item_id]['description'] = _sanitize_text(food.get('description', ''))
+                    if 'predictionSource' in food:
+                        existing_data[item_id]['prediction_source'] = food.get('predictionSource') or ''
+                    if 'geminiError' in food:
+                        existing_data[item_id]['gemini_error'] = _sanitize_text(food.get('geminiError', '')) or ''
+                    if 'daysInFridge' in food:
+                        try:
+                            days_in_fridge = max(float(food.get('daysInFridge', 0)), 0.0)
+                        except Exception:
+                            days_in_fridge = 0.0
+                        existing_data[item_id]['entry_date'] = (datetime.now() - timedelta(days=days_in_fridge)).isoformat()
+                    if 'cumulativeTempAbuse' in food:
+                        try:
+                            cumulative_temp_abuse = max(float(food.get('cumulativeTempAbuse', 0)), 0.0)
+                        except Exception:
+                            cumulative_temp_abuse = 0.0
+                        existing_data[item_id]['cumulative_temp_abuse'] = str(round(cumulative_temp_abuse, 4))
                     # removed_at must only be set for actually-removed rows.
                     # For every other status we always clear it so that a stale
                     # removed_at timestamp can never "leak" back onto a live item.
@@ -612,7 +883,14 @@ def write_foods(foods):
                 else:
                     # Create new item (or overwrite a recycled removed row).
                     # removed_at is always empty for new items.
-                    days_in_fridge = food.get('daysInFridge', 0)
+                    try:
+                        days_in_fridge = max(float(food.get('daysInFridge', 0)), 0.0)
+                    except Exception:
+                        days_in_fridge = 0.0
+                    try:
+                        cumulative_temp_abuse = max(float(food.get('cumulativeTempAbuse', 0)), 0.0)
+                    except Exception:
+                        cumulative_temp_abuse = 0.0
                     entry_date = datetime.now() - timedelta(days=days_in_fridge)
                     existing_data[item_id] = {
                         'item_id': item_id,
@@ -625,7 +903,7 @@ def write_foods(foods):
                         'packaging_type': food.get('packagingType', 'sealed'),
                         'storage_location': food.get('storageLocation', 'regular'),
                         'status': food.get('status', 'confirmed'),
-                        'cumulative_temp_abuse': '0.0',
+                        'cumulative_temp_abuse': str(round(cumulative_temp_abuse, 4)),
                         'freshness_score': str(food['freshnessScore']),
                         'days_until_spoilage': str(food['daysUntilSpoilage']),
                         'safety_category': 'Fresh',
@@ -634,6 +912,8 @@ def write_foods(foods):
                         'gemini_shelf_life': str(food['daysUntilSpoilage']),
                         'gemini_spoilage_params': json.dumps(food['geminiSpoilageParams']) if food.get('geminiSpoilageParams') else '',
                         'description': _sanitize_text(food.get('description', '')),
+                        'prediction_source': food.get('predictionSource') or '',
+                        'gemini_error': _sanitize_text(food.get('geminiError', '')) or '',
                         'removed_at': ''
                     }
 
@@ -958,12 +1238,12 @@ def create_food():
 
         # --- Disambiguation: ambiguous situation, user must choose ---
         # Trigger when:
-        #   - any confirmed match exists (single OR multiple) — user must confirm
-        #     whether the existing item is going out or this is a brand-new item
         #   - removed item(s) + confirmed item(s) conflict (reentry_or_outgoing)
+        #   - multiple confirmed items match (multi_confirmed)
         #   - multiple removed items but nothing confirmed (multi_removed)
         needs_disambiguation = (
-            len(all_confirmed) >= 1 or
+            (len(all_confirmed) > 0 and len(all_removed) > 0) or
+            len(all_confirmed) > 1 or
             len(all_removed) > 1
         )
         if needs_disambiguation:
@@ -1019,10 +1299,6 @@ def create_food():
                 dis_type = 'reentry_or_outgoing'
             elif len(all_confirmed) > 1:
                 dis_type = 'multi_confirmed'
-            elif len(all_confirmed) == 1:
-                # Single confirmed match, no removed items — new scan could be this
-                # item going OUT or a completely new item coming IN.  User decides.
-                dis_type = 'outgoing_or_new'
             else:  # len(all_removed) > 1, no confirmed
                 dis_type = 'multi_removed'
 
@@ -1060,9 +1336,7 @@ def create_food():
             return jsonify({'reentry': True, 'id': removed_match['id'], 'hours_outside': round(hours_outside, 2)}), 200
 
         # --- Exactly one confirmed match: auto-mark as outgoing (fallback) ---
-        # NOTE: with needs_disambiguation now covering len(all_confirmed) >= 1
-        # this branch is effectively unreachable during normal scanning, but kept
-        # as a safe fallback in case the endpoint is called directly.
+        # Single confirmed match (and no removed conflict): auto-mark outgoing.
         if all_confirmed:
             match = all_confirmed[0]
             stale_purged = []
@@ -1115,11 +1389,14 @@ def create_food():
         'daysUntilSpoilage': data.get('daysUntilSpoilage', 7),
         'timeInFridge': '0 days',
         'foodGroup': data.get('foodGroup', 'other'),
+        'predictionSource': data.get('predictionSource', None),
+        'geminiError': data.get('geminiError', None),
         'packagingType': data.get('packagingType', 'sealed'),
         'expirationDate': data.get('expirationDate', ''),
         'storageLocation': data.get('storageLocation', 'regular'),
         'status': data.get('status', 'confirmed'),
         'daysInFridge': data.get('daysInFridge', 0),
+        'cumulativeTempAbuse': data.get('cumulativeTempAbuse', data.get('timeOutsideFridge', 0)),
         'confidence': data.get('confidence'),
         'top5Predictions': data.get('top5Predictions', []),
         'geminiSpoilageParams': data.get('geminiSpoilageParams', None),
@@ -1382,6 +1659,7 @@ def delete_outgoing_foods():
             removed_at = datetime.now().isoformat()
             updated_count = 0
             rows = []
+            removed_items = []
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
                 fieldnames = list(reader.fieldnames)
@@ -1389,6 +1667,11 @@ def delete_outgoing_foods():
                     fieldnames.append('removed_at')
                 for row in reader:
                     if row.get('status') == 'outgoing':
+                        removed_items.append({
+                            'id': row.get('item_id', ''),
+                            'name': row.get('food_name', ''),
+                            'freshness': row.get('freshness_score', '0')
+                        })
                         row['status'] = 'removed'
                         row['removed_at'] = removed_at
                         updated_count += 1
@@ -1397,6 +1680,23 @@ def delete_outgoing_foods():
                 writer = csv.DictWriter(file, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(rows)
+
+            for item in removed_items:
+                try:
+                    freshness = float(item['freshness']) if item['freshness'] != '' else 0
+                except Exception:
+                    freshness = 0
+                _append_outcome_record(
+                    item_id=item['id'],
+                    food_name=item['name'],
+                    outcome=_scan_outcome_from_freshness(freshness),
+                    freshness_at_outcome=freshness,
+                    days_tracked=0,
+                    source='scan_outgoing'
+                )
+
+            if removed_items:
+                update_daily_stats()
         return jsonify({'message': f'{updated_count} outgoing items removed', 'count': updated_count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1440,6 +1740,10 @@ def update_food(item_id):
                 'confidence': None if becoming_confirmed else food.get('confidence'),
                 'top5Predictions': [] if becoming_confirmed else food.get('top5Predictions', [])
             }
+            if 'daysInFridge' in data:
+                foods[i]['daysInFridge'] = data.get('daysInFridge', 0)
+            if 'cumulativeTempAbuse' in data:
+                foods[i]['cumulativeTempAbuse'] = data.get('cumulativeTempAbuse', 0)
             if write_foods(foods):
                 return jsonify(foods[i])
             return jsonify({'error': 'Failed to update food'}), 500
@@ -1514,15 +1818,24 @@ def confirm_pending_foods():
     """Confirm all pending/pending_reentry items (change status to confirmed)"""
     foods = read_foods()
     updated_count = 0
+    reentry_confirmed_ids = []
     
     for food in foods:
         if food.get('status') in ('pending', 'pending_reentry'):
+            if food.get('status') == 'pending_reentry':
+                reentry_confirmed_ids.append(food.get('id'))
             food['status'] = 'confirmed'
             food['confidence'] = None
             food['top5Predictions'] = []
             updated_count += 1
     
     if write_foods(foods):
+        revoked_total = 0
+        for item_id in reentry_confirmed_ids:
+            if item_id:
+                revoked_total += _revoke_latest_outcome(item_id)
+        if revoked_total > 0:
+            update_daily_stats()
         return jsonify({'message': f'{updated_count} items confirmed', 'count': updated_count})
     return jsonify({'error': 'Failed to confirm items'}), 500
 
@@ -1584,12 +1897,15 @@ def get_sensor_data():
 
 @app.route('/api/stats/outcome', methods=['POST'])
 def record_outcome():
-    """Record the outcome of a food item (consumed, wasted)"""
+    """Record the outcome of a food item, inferring when not explicitly supplied."""
     data = request.json
     item_id = data.get('item_id')
-    outcome = data.get('outcome')  # 'consumed', 'wasted'
+    outcome = data.get('outcome')  # optional: 'consumed', 'wasted'
     
-    if not item_id or not outcome or outcome not in ['consumed', 'wasted']:
+    if not item_id:
+        return jsonify({'error': 'Invalid data'}), 400
+
+    if outcome and outcome not in ['consumed', 'wasted']:
         return jsonify({'error': 'Invalid data'}), 400
     
     try:
@@ -1599,6 +1915,9 @@ def record_outcome():
         
         if not food:
             return jsonify({'error': 'Food not found'}), 404
+
+        if not outcome:
+            outcome = _scan_outcome_from_freshness(food.get('freshnessScore', 0))
         
         # Calculate days tracked
         try:
@@ -1608,17 +1927,14 @@ def record_outcome():
             days_tracked = 0
         
         # Record outcome
-        outcome_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'item_outcomes.csv')
-        with open(outcome_path, 'a', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            writer.writerow([
-                item_id,
-                food['name'],
-                outcome,
-                datetime.now().isoformat(),
-                food['freshnessScore'],
-                days_tracked
-            ])
+        _append_outcome_record(
+            item_id=item_id,
+            food_name=food['name'],
+            outcome=outcome,
+            freshness_at_outcome=food.get('freshnessScore', 0),
+            days_tracked=days_tracked,
+            source='manual'
+        )
         
         # Update daily stats
         update_daily_stats()
@@ -1658,7 +1974,6 @@ def update_daily_stats():
         today_str = today.isoformat()
         seven_days_ago = (today - timedelta(days=7)).isoformat()
         
-        outcome_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'item_outcomes.csv')
         history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'waste_history.csv')
         
         # Read and filter item_outcomes to keep only last 7 days
@@ -1666,7 +1981,7 @@ def update_daily_stats():
         consumed = 0
         wasted = 0
         
-        with open(outcome_path, 'r', newline='', encoding='utf-8') as file:
+        with open(OUTCOME_PATH, 'r', newline='', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             fieldnames = reader.fieldnames
             for row in reader:
@@ -1684,12 +1999,12 @@ def update_daily_stats():
                             wasted += 1
         
         # Write back only recent outcomes
-        with open(outcome_path, 'w', newline='', encoding='utf-8') as file:
+        with open(OUTCOME_PATH, 'w', newline='', encoding='utf-8') as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(recent_outcomes)
         # Write back only recent outcomes
-        with open(outcome_path, 'w', newline='', encoding='utf-8') as file:
+        with open(OUTCOME_PATH, 'w', newline='', encoding='utf-8') as file:
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(recent_outcomes)
@@ -1731,10 +2046,16 @@ def get_temperature_history():
     try:
         temp_history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'temperature_history.csv')
         history = []
+        cutoff = datetime.now() - timedelta(hours=12)
         
         with open(temp_history_path, 'r', newline='', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
+                try:
+                    if datetime.fromisoformat(row['timestamp']) < cutoff:
+                        continue
+                except Exception:
+                    pass
                 history.append({
                     'timestamp': row['timestamp'],
                     'temperature': float(row['temperature']),
@@ -1753,9 +2074,15 @@ def get_mq_history():
         mq_history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'mq_history.csv')
         mq_ids = [2, 3, 4, 5, 8, 9, 135]
         history = []
+        cutoff = datetime.now() - timedelta(hours=12)
         with open(mq_history_path, 'r', newline='', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                try:
+                    if datetime.fromisoformat(row['timestamp']) < cutoff:
+                        continue
+                except Exception:
+                    pass
                 entry = {'timestamp': row['timestamp']}
                 for sid in mq_ids:
                     v = row.get(f'mq{sid}', '')
@@ -1765,6 +2092,58 @@ def get_mq_history():
     except Exception as e:
         print(f'Error reading MQ history: {e}')
         return jsonify([])
+
+
+@app.route('/api/stats/gas-contributors', methods=['GET'])
+def get_gas_contributors():
+    """Return dominant gas severity and top suspected food contributors."""
+    try:
+        sensor = get_sensor()
+        connected = sensor.has_environment_data()
+
+        mq_ids = [2, 3, 4, 5, 8, 9, 135]
+        mq_readings = {}
+        for sid in mq_ids:
+            val = sensor.get_mq_reading(sid)
+            if val is not None:
+                mq_readings[sid] = val
+
+        foods = read_foods()
+        confirmed_foods = [f for f in foods if f.get('status') == 'confirmed']
+
+        result = predict_gas_contributors(confirmed_foods, mq_readings)
+        severity = result.get('severity', 'low')
+        dominant_sensors = result.get('dominant_sensors', [])
+        dominant_sensor_label = ', '.join(dominant_sensors) if dominant_sensors else 'N/A'
+
+        if severity == 'high':
+            message = 'High levels of gas detected. Check fridge ventilation and inspect stored items immediately.'
+            details = f'Dominant high signal: {dominant_sensor_label}. High threshold: safe max + {int(MQ_HIGH_THRESHOLD_OFFSET)}mV'
+        elif severity == 'elevated':
+            message = 'Elevated gas levels detected. Monitor conditions and review nearby food items.'
+            details = f'Dominant elevated signal: {dominant_sensor_label}. Elevated range: above safe max, below safe max + {int(MQ_HIGH_THRESHOLD_OFFSET)}mV'
+        else:
+            message = 'No abnormal gases detected.'
+            details = ''
+
+        return jsonify({
+            'connected': connected,
+            'severity': severity,
+            'message': message,
+            'details': details,
+            'dominantSensors': dominant_sensors,
+            'contributors': result.get('contributors', []),
+        })
+    except Exception as e:
+        print(f'Error computing gas contributors: {e}')
+        return jsonify({
+            'connected': False,
+            'severity': 'low',
+            'message': 'No abnormal gases detected.',
+            'details': '',
+            'dominantSensors': [],
+            'contributors': []
+        })
 
 
 @app.route('/api/recipes/cache/clear', methods=['POST'])
@@ -1990,9 +2369,6 @@ def classify_food_batch():
     Returns: array of classification results, one per image
     """
     try:
-        if not gemini_client:
-            return jsonify({'error': 'Gemini API key not configured'}), 500
-
         # Collect all uploaded image files (image_0, image_1, ...)
         image_files = []
         i = 0
@@ -2014,6 +2390,20 @@ def classify_food_batch():
                 f.save(temp_path)
                 temp_paths.append(temp_path)
                 pil_images.append(Image.open(temp_path))
+
+            # Local model is primary for resilience. Gemini is a best-effort enhancer.
+            local_raw_results = []
+            if _LOCAL_MODEL_AVAILABLE and _local_clf.is_available():
+                for img in pil_images:
+                    try:
+                        local_raw_results.append(_local_clf.predict(img))
+                    except Exception as local_err:
+                        print(f"[classify batch] local model prediction failed: {local_err}")
+                        local_raw_results.append(None)
+            else:
+                local_raw_results = [None] * len(pil_images)
+
+            results = [_build_local_primary_result(local_result) for local_result in local_raw_results]
 
             prompt = f"""
 I am sending you {n} food image(s), provided in order after this message.
@@ -2062,55 +2452,50 @@ Guidelines:
 Return ONLY the JSON array, no extra text.
 """
 
-            # Build content list: prompt then all images
-            content = [prompt] + pil_images
-            response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=content
-            )
+            # Build content list: prompt then all images. If Gemini fails, keep local-only results.
+            used_gemini_indices = set()
+            gemini_error_message = None
+            if gemini_client:
+                try:
+                    content = [prompt] + pil_images
+                    response = _run_with_timeout(
+                        lambda: gemini_client.models.generate_content(
+                            model='gemini-2.5-flash-lite',
+                            contents=content
+                        ),
+                        _GEMINI_REQUEST_TIMEOUT_SECONDS
+                    )
+                    gemini_results = json.loads(_extract_json_payload(response.text))
+                    if not isinstance(gemini_results, list):
+                        gemini_results = [gemini_results]
 
-            result_text = response.text
-            if '```json' in result_text:
-                result_text = result_text.split('```json')[1].split('```')[0]
-            elif '```' in result_text:
-                result_text = result_text.split('```')[1].split('```')[0]
-
-            results = json.loads(result_text.strip())
-
-            # Ensure it's a list
-            if not isinstance(results, list):
-                results = [results]
-
-            # Fetch grounded, source-verified spoilage parameters for all detected foods
-            detected_foods = [
-                {'name': r['predicted_class'], 'category': r.get('category', 'other'), 'packaging_type': r.get('packaging_type', 'sealed')}
-                for r in results
-                if r.get('predicted_class') and r['predicted_class'].lower() != 'no food detected'
-            ]
-            grounded_params = get_grounded_spoilage_params(detected_foods)
-
-            # Merge grounded params over image-based spoilage_parameters
-            param_keys = ['shelf_life_days', 'optimal_temp', 'temp_sensitivity',
-                          'temp_abuse_threshold', 'optimal_humidity', 'humidity_sensitivity', 'optimal_packaging']
-            for result in results:
-                food_name = result.get('predicted_class', '').lower()
-                if food_name in grounded_params:
-                    gp = grounded_params[food_name]
-                    result['spoilage_parameters'] = {k: gp[k] for k in param_keys if k in gp}
-
-            # ── Local model ──────────────────────────────────────────────────
-            # Run immediately alongside Gemini so the frontend can display both
-            # predictions without a separate "Compare" round-trip.
-            if _LOCAL_MODEL_AVAILABLE and _local_clf.is_available():
-                for i, result in enumerate(results):
-                    if i < len(pil_images):
-                        try:
-                            result['local_result'] = _local_clf.predict(pil_images[i])
-                        except Exception as e:
-                            result['local_result'] = {'error': str(e)}
+                    # Keep local fallback for each index where Gemini output is missing/invalid.
+                    merged = []
+                    for idx in range(len(results)):
+                        candidate = gemini_results[idx] if idx < len(gemini_results) else None
+                        if isinstance(candidate, dict) and candidate.get('predicted_class'):
+                            merged.append(candidate)
+                            used_gemini_indices.add(idx)
+                        else:
+                            merged.append(results[idx])
+                    results = merged
+                except Exception as gemini_err:
+                    gemini_error_message = str(gemini_err)
+                    print(f"[classify batch] Gemini failed, using local-only predictions: {gemini_err}")
             else:
-                for result in results:
-                    result['local_result'] = None
+                gemini_error_message = 'Gemini API key not configured'
+
+            # Always attach local_result so frontend compare panel still works.
+            for i, result in enumerate(results):
+                result['local_result'] = local_raw_results[i] if i < len(local_raw_results) else None
+                if i in used_gemini_indices:
+                    result['prediction_source'] = 'gemini'
+                    result['gemini_error'] = None
+                else:
+                    result['prediction_source'] = 'local_fallback'
+                    result['gemini_error'] = gemini_error_message or 'Gemini response missing or invalid'
+
+            _attach_grounded_spoilage_params(results)
 
             return jsonify(results)
 
@@ -2134,9 +2519,6 @@ def classify_food():
     Returns: predicted class name, confidence, and top 5 predictions
     """
     try:
-        if not gemini_client:
-            return jsonify({'error': 'Gemini API key not configured'}), 500
-            
         if 'image' not in request.files:
             return jsonify({'error': 'No image file provided'}), 400
         
@@ -2150,6 +2532,15 @@ def classify_food():
         try:
             # Load image
             image = Image.open(temp_path)
+
+            local_raw_result = None
+            if _LOCAL_MODEL_AVAILABLE and _local_clf.is_available():
+                try:
+                    local_raw_result = _local_clf.predict(image)
+                except Exception as local_err:
+                    print(f"[classify] local model prediction failed: {local_err}")
+
+            result = _build_local_primary_result(local_raw_result)
             
             # Use Gemini to identify the food
             # gemini-2.5-flash-lite is fastest, but can use gemini-2.5-flash if tokens are depleted
@@ -2197,35 +2588,31 @@ Guidelines:
 - If no food is detected, fill out the fields with 'No Food Detected' for food name and null for the rest
 """
             
-            response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=[prompt, image]
-            )
-            
-            # Parse the response
-            result_text = response.text
-            
-            # Extract JSON from response (Gemini might wrap it in markdown)
-            if '```json' in result_text:
-                result_text = result_text.split('```json')[1].split('```')[0]
-            elif '```' in result_text:
-                result_text = result_text.split('```')[1].split('```')[0]
-            
-            result = json.loads(result_text.strip())
+            prediction_source = 'local_fallback'
+            gemini_error_message = 'Gemini API key not configured' if not gemini_client else None
 
-            # Fetch grounded, source-verified spoilage parameters for the identified food
-            if result.get('predicted_class') and result['predicted_class'].lower() != 'no food detected':
-                grounded_params = get_grounded_spoilage_params([{
-                    'name': result['predicted_class'],
-                    'category': result.get('category', 'other'),
-                    'packaging_type': result.get('packaging_type', 'sealed')
-                }])
-                food_name = result['predicted_class'].lower()
-                if food_name in grounded_params:
-                    gp = grounded_params[food_name]
-                    param_keys = ['shelf_life_days', 'optimal_temp', 'temp_sensitivity',
-                                  'temp_abuse_threshold', 'optimal_humidity', 'humidity_sensitivity', 'optimal_packaging']
-                    result['spoilage_parameters'] = {k: gp[k] for k in param_keys if k in gp}
+            if gemini_client:
+                try:
+                    response = _run_with_timeout(
+                        lambda: gemini_client.models.generate_content(
+                            model='gemini-2.5-flash-lite',
+                            contents=[prompt, image]
+                        ),
+                        _GEMINI_REQUEST_TIMEOUT_SECONDS
+                    )
+                    gemini_result = json.loads(_extract_json_payload(response.text))
+                    if isinstance(gemini_result, dict) and gemini_result.get('predicted_class'):
+                        result = gemini_result
+                        prediction_source = 'gemini'
+                        gemini_error_message = None
+                except Exception as gemini_err:
+                    gemini_error_message = str(gemini_err)
+                    print(f"[classify] Gemini failed, using local-only prediction: {gemini_err}")
+
+            _attach_grounded_spoilage_params([result])
+            result['local_result'] = local_raw_result
+            result['prediction_source'] = prediction_source
+            result['gemini_error'] = gemini_error_message
 
             return jsonify(result)
             
@@ -2298,16 +2685,14 @@ Return your response in this exact JSON format:
 Return ONLY the JSON, no extra text.
 """
             try:
-                response    = gemini_client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=[prompt, pil_image]
+                response = _run_with_timeout(
+                    lambda: gemini_client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=[prompt, pil_image]
+                    ),
+                    _GEMINI_REQUEST_TIMEOUT_SECONDS
                 )
-                result_text = response.text
-                if '```json' in result_text:
-                    result_text = result_text.split('```json')[1].split('```')[0]
-                elif '```' in result_text:
-                    result_text = result_text.split('```')[1].split('```')[0]
-                gemini_result = json.loads(result_text.strip())
+                gemini_result = json.loads(_extract_json_payload(response.text))
             except Exception as e:
                 gemini_result = {'error': str(e)}
         else:

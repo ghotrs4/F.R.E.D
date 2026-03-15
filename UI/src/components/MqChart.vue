@@ -6,9 +6,9 @@
     <div v-else class="chart-container">
       <div class="chart-area">
         <div class="y-axis">
-          <span class="y-label">{{ maxVal }}</span>
-          <span class="y-label">{{ Math.round((maxVal + minVal) / 2) }}</span>
-          <span class="y-label">{{ minVal }}</span>
+          <span class="y-label">High</span>
+          <span class="y-label">Mid</span>
+          <span class="y-label">Low</span>
         </div>
         <div class="chart-content">
           <svg :viewBox="`0 0 ${viewBoxWidth} ${viewBoxHeight}`" preserveAspectRatio="none">
@@ -23,6 +23,26 @@
               stroke-linecap="round"
               :style="{ filter: `drop-shadow(0 0 4px ${sensor.color}99)` }"
             />
+            <!-- Shared safe threshold line -->
+            <line
+              x1="0" :x2="viewBoxWidth"
+              :y1="SAFE_LINE_Y"
+              :y2="SAFE_LINE_Y"
+              stroke="oklch(0.8 0 0)"
+              stroke-width="1.5"
+              stroke-dasharray="6,4"
+              opacity="0.55"
+            />
+            <!-- Shared high threshold guide -->
+            <line
+              x1="0" :x2="viewBoxWidth"
+              :y1="getSharedHighLineY()"
+              :y2="getSharedHighLineY()"
+              stroke="oklch(0.7 0 0)"
+              stroke-width="1"
+              stroke-dasharray="2,5"
+              opacity="0.3"
+            />
           </svg>
         </div>
       </div>
@@ -33,6 +53,10 @@
       <div v-for="sensor in ALL_SENSORS" :key="sensor.id" class="legend-item">
         <span class="legend-swatch" :style="{ background: sensor.color }"></span>
         <span class="legend-label">MQ-{{ sensor.id }}: {{ sensor.name }}</span>
+        <span
+          v-if="props.connected && latestReading && latestReading[`mq${sensor.id}`] != null"
+          :class="['status-badge', classifyReading(sensor.id, latestReading[`mq${sensor.id}`])]"
+        >{{ classifyReading(sensor.id, latestReading[`mq${sensor.id}`]) }}</span>
       </div>
     </div>
   </div>
@@ -40,11 +64,16 @@
 
 <script setup>
 import { computed } from 'vue'
+import { MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET, classifyMqReading } from '../utils/mqSensorConfig'
 
 const props = defineProps({
   data: {
     type: Array,
     required: true
+  },
+  connected: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -71,21 +100,69 @@ const activeSensors = computed(() => {
 
 const hasNoData = computed(() => props.data.length === 0 || activeSensors.value.length === 0)
 
-// Global min/max across all active sensors for consistent Y axis
-const allValues = computed(() => {
-  const vals = []
-  for (const s of activeSensors.value) {
-    for (const d of props.data) {
-      const v = d[`mq${s.id}`]
-      if (v != null) vals.push(v)
+const SAFE_RANGES = MQ_SAFE_RANGES
+const HIGH_THRESHOLD_OFFSET = MQ_HIGH_THRESHOLD_OFFSET
+const SAFE_LINE_Y = viewBoxHeight * (2 / 3)
+const HIGH_LINE_Y = viewBoxHeight * (1 / 3)
+
+function classifyReading(sensorId, value) {
+  return classifyMqReading(sensorId, value)
+}
+
+// Use safe ranges to define the chart scale so all sensors share the same
+// safe-threshold line while still preserving each sensor's calibrated values.
+function getSensorStats(sensorId) {
+  const key = `mq${sensorId}`
+  const vals = props.data.map(d => d[key]).filter(v => v != null)
+  const safe = SAFE_RANGES[sensorId]
+  if (safe) {
+    const dataMin = vals.length ? Math.min(...vals) : safe.min
+    const dataMax = vals.length ? Math.max(...vals) : safe.max + HIGH_THRESHOLD_OFFSET
+    return {
+      safeMin: safe.min,
+      safeMax: safe.max,
+      lowerMin: Math.min(dataMin, safe.min),
+      upperMax: Math.max(dataMax, safe.max + HIGH_THRESHOLD_OFFSET)
     }
   }
-  return vals
-})
+  if (!vals.length) {
+    return { safeMin: 0, safeMax: 1, lowerMin: 0, upperMax: 1 }
+  }
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  return { safeMin: min, safeMax: max, lowerMin: min, upperMax: max }
+}
 
-const minVal = computed(() => allValues.value.length ? Math.floor(Math.min(...allValues.value)) : 0)
-const maxVal = computed(() => allValues.value.length ? Math.ceil(Math.max(...allValues.value))  : 1000)
-const valRange = computed(() => Math.max(maxVal.value - minVal.value, 1))
+const latestReading = computed(() => props.data.length ? props.data[props.data.length - 1] : null)
+
+function getYForValue(sensorId, value) {
+  const { safeMax, lowerMin, upperMax } = getSensorStats(sensorId)
+  const highThreshold = safeMax + HIGH_THRESHOLD_OFFSET
+
+  if (value <= safeMax) {
+    const lowerRange = Math.max(safeMax - lowerMin, 1)
+    const norm = (value - lowerMin) / lowerRange
+    return viewBoxHeight - norm * (viewBoxHeight - SAFE_LINE_Y)
+  }
+
+  if (value <= highThreshold) {
+    const elevatedRange = Math.max(highThreshold - safeMax, 1)
+    const norm = (value - safeMax) / elevatedRange
+    return SAFE_LINE_Y - norm * (SAFE_LINE_Y - HIGH_LINE_Y)
+  }
+
+  const upperRange = Math.max(upperMax - highThreshold, 1)
+  const norm = (value - highThreshold) / upperRange
+  return HIGH_LINE_Y - norm * HIGH_LINE_Y
+}
+
+function getThresholdY(sensorId, thresholdValue) {
+  return getYForValue(sensorId, thresholdValue)
+}
+
+function getSharedHighLineY() {
+  return HIGH_LINE_Y
+}
 
 function getPoints(sensorId) {
   const key = `mq${sensorId}`
@@ -94,8 +171,7 @@ function getPoints(sensorId) {
     const v = d[key]
     if (v == null) return
     const x = (i / Math.max(props.data.length - 1, 1)) * viewBoxWidth
-    const norm = (v - minVal.value) / valRange.value
-    const y = viewBoxHeight - norm * viewBoxHeight
+    const y = getYForValue(sensorId, v)
     pts.push(`${x},${y}`)
   })
   return pts.join(' ')
@@ -185,5 +261,29 @@ svg {
 .legend-label {
   font-size: 0.7rem;
   color: oklch(0.65 0 0);
+}
+
+.status-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+}
+
+.status-badge.low {
+  background: oklch(0.35 0.12 145);
+  color: oklch(0.85 0.15 145);
+}
+
+.status-badge.elevated {
+  background: oklch(0.35 0.12 55);
+  color: oklch(0.85 0.18 55);
+}
+
+.status-badge.high {
+  background: oklch(0.35 0.18 25);
+  color: oklch(0.85 0.2 25);
 }
 </style>
