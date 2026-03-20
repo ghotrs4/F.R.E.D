@@ -12,17 +12,28 @@
         </div>
         <div class="chart-content">
           <svg :viewBox="`0 0 ${viewBoxWidth} ${viewBoxHeight}`" preserveAspectRatio="none">
-            <polyline
-              v-for="sensor in activeSensors"
-              :key="sensor.id"
-              :points="getPoints(sensor.id)"
-              fill="none"
-              :stroke="sensor.color"
-              stroke-width="3"
-              stroke-linejoin="round"
-              stroke-linecap="round"
-              :style="{ filter: `drop-shadow(0 0 4px ${sensor.color}99)` }"
-            />
+            <g v-for="sensor in activeSensors" :key="sensor.id">
+              <polyline
+                :points="getPoints(sensor.id)"
+                fill="none"
+                :stroke="sensor.color"
+                stroke-width="3"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+                :style="{ filter: `drop-shadow(0 0 4px ${sensor.color}99)` }"
+              />
+              <circle
+                v-for="(point, index) in getSensorPlotPoints(sensor.id)"
+                :key="`${sensor.id}-${index}`"
+                :cx="point.x"
+                :cy="point.y"
+                r="8"
+                fill="transparent"
+                class="hover-target"
+              >
+                <title>{{ `MQ-${sensor.id}: ${point.value} mV${point.label ? ` at ${point.label}` : ''}` }}</title>
+              </circle>
+            </g>
             <!-- Shared safe threshold line -->
             <line
               x1="0" :x2="viewBoxWidth"
@@ -164,7 +175,18 @@ function getSharedHighLineY() {
   return HIGH_LINE_Y
 }
 
-function getPoints(sensorId) {
+function formatTime(timestamp) {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  const hours = date.getHours()
+  const minutes = date.getMinutes().toString().padStart(2, '0')
+  const ampm = hours >= 12 ? 'PM' : 'AM'
+  const displayHours = hours % 12 || 12
+  return `${displayHours}:${minutes} ${ampm}`
+}
+
+function getSensorPlotPoints(sensorId) {
   const key = `mq${sensorId}`
   const pts = []
   props.data.forEach((d, i) => {
@@ -172,9 +194,20 @@ function getPoints(sensorId) {
     if (v == null) return
     const x = (i / Math.max(props.data.length - 1, 1)) * viewBoxWidth
     const y = getYForValue(sensorId, v)
-    pts.push(`${x},${y}`)
+    pts.push({
+      x,
+      y,
+      value: v,
+      label: formatTime(d.timestamp)
+    })
   })
-  return pts.join(' ')
+  return pts
+}
+
+function getPoints(sensorId) {
+  return getSensorPlotPoints(sensorId)
+    .map(point => `${point.x},${point.y}`)
+    .join(' ')
 }
 </script>
 
@@ -235,6 +268,10 @@ svg {
   width: 100%;
   height: 100%;
   overflow: visible;
+}
+
+.hover-target {
+  cursor: crosshair;
 }
 
 /* Legend */
