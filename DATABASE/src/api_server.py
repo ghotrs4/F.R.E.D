@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import csv
 import os
+import tempfile
 import requests
 import json
 from datetime import datetime, timedelta
@@ -728,8 +729,19 @@ def _trim_history_file(filepath: str, fieldnames: list):
             print(f'History trim skipped for {filepath}: no recent rows found')
             return
 
-        tmp_path = f"{filepath}.tmp"
-        with open(tmp_path, 'w', newline='', encoding='utf-8') as f:
+        # Use a unique temp file to avoid collisions when concurrent requests
+        # trim the same history file at nearly the same time.
+        tmp_dir = os.path.dirname(filepath) or '.'
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            newline='',
+            encoding='utf-8',
+            dir=tmp_dir,
+            prefix=os.path.basename(filepath) + '.',
+            suffix='.tmp',
+            delete=False,
+        ) as f:
+            tmp_path = f.name
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(recent)
