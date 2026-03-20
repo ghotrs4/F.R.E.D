@@ -252,7 +252,7 @@ const getReadingStatusColor = (value, min, max, connected) => {
   return value >= min && value <= max ? '#228B22' : '#8B0000'
 }
 
-const mqStatusText = computed(() => {
+const mqSeverity = computed(() => {
   if (!sensorConnected.value) return '--'
   const latest = mqHistory.value.length ? mqHistory.value[mqHistory.value.length - 1] : null
   if (!latest) return '--'
@@ -260,11 +260,25 @@ const mqStatusText = computed(() => {
   let hasElevated = false
   for (const sensorId of Object.keys(MQ_SAFE_RANGES).map(Number)) {
     const status = classifyMqReading(sensorId, latest[`mq${sensorId}`])
-    if (status === 'high') return 'High'
+    if (status === 'high') return 'high'
     if (status === 'elevated') hasElevated = true
   }
 
-  return hasElevated ? 'Medium' : 'Low'
+  return hasElevated ? 'elevated' : 'low'
+})
+
+const mqStatusText = computed(() => {
+  if (mqSeverity.value === '--') return '--'
+  if (mqSeverity.value === 'high') return 'High'
+  if (mqSeverity.value === 'elevated') return 'Elevated'
+  return 'Low'
+})
+
+const mqStatusColor = computed(() => {
+  if (mqSeverity.value === '--') return 'oklch(0.6 0 0)'
+  if (mqSeverity.value === 'high') return '#8B0000'
+  if (mqSeverity.value === 'elevated') return '#FFD700'
+  return '#228B22'
 })
 
 const navigateToInventory = () => {
@@ -434,7 +448,7 @@ onUnmounted(() => {
         </div>
         <div class="reading-item">
           <span class="reading-label">Gas Levels</span>
-          <span class="reading-value">{{ mqStatusText }}</span>
+          <span class="reading-value" :style="{ color: mqStatusColor }">{{ mqStatusText }}</span>
         </div>
         <div class="reading-item">
           <span class="reading-label">Waste Reduced</span>

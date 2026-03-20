@@ -21,6 +21,18 @@ const wasteHistory = ref([])
 const temperatureHistory = ref([])
 const mqHistory = ref([])
 
+// Render only the most recent samples in charts for readability/performance.
+// Full 12-hour history is still fetched/kept for monitoring and alerts.
+const CHART_SAMPLE_LIMIT = 50
+
+const temperatureChartData = computed(() =>
+  temperatureHistory.value.slice(-CHART_SAMPLE_LIMIT)
+)
+
+const mqChartData = computed(() =>
+  mqHistory.value.slice(-CHART_SAMPLE_LIMIT)
+)
+
 const SAFE_TEMP_MIN = 1
 const SAFE_TEMP_MAX = 8
 const SAFE_HUMIDITY_MIN = 20
@@ -180,7 +192,7 @@ onUnmounted(() => {
               <span class="reading-value-large" :style="{ color: getReadingStatusColor(temperature, SAFE_TEMP_MIN, SAFE_TEMP_MAX, sensorsConnected) }">{{ sensorsConnected ? temperature.toFixed(1) + '°C' : '--' }}</span>
             </div>
           </div>
-          <TemperatureChart :data="temperatureHistory" />
+          <TemperatureChart :data="temperatureChartData" />
         </div>
         <div class="reading-with-chart">
           <div class="reading-large">
@@ -190,7 +202,7 @@ onUnmounted(() => {
               <span class="reading-value-large" :style="{ color: getReadingStatusColor(humidity, SAFE_HUMIDITY_MIN, SAFE_HUMIDITY_MAX, sensorsConnected) }">{{ sensorsConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
             </div>
           </div>
-          <HumidityChart :data="temperatureHistory" />
+          <HumidityChart :data="temperatureChartData" />
         </div>
       </div>
       <div class="reading-with-chart">
@@ -201,7 +213,7 @@ onUnmounted(() => {
             <span class="reading-value-large" style="font-size: 1rem;">{{ mqStatusText }}</span>
           </div>
         </div>
-        <MqChart :data="mqHistory" :connected="sensorsConnected" />
+        <MqChart :data="mqChartData" :connected="sensorsConnected" />
       </div>
       <div class="sensor-status">
         <span class="status-indicator" :class="{ active: sensorsConnected, disconnected: !sensorsConnected }"></span>
