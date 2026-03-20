@@ -1,5 +1,8 @@
 // API functions for waste statistics
-const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')}/api`
+const API_BASE_URL = `${(
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
+).replace(/\/$/, '')}/api`
 
 /**
  * Record the outcome of a food item

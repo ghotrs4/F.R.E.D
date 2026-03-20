@@ -24,7 +24,10 @@ const capturedBlobs = ref([])
 const statusMessage = ref('')
 const isBatchProcessing = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
+).replace(/\/$/, '')
 const captureCooldown = ref(false)
 const debugCanvasRef = ref(null)
 const showDebugOverlay = ref(false)

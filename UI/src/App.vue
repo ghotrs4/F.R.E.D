@@ -14,7 +14,10 @@ import { loadFoodsFromCSV } from './utils/csvParser'
 const router = useRouter()
 const route = useRoute()
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
+).replace(/\/$/, '')
 const apiUrl = (path) => `${API_BASE_URL}${path}`
 
 const showCameraPopup = ref(false)
