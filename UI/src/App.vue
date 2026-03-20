@@ -14,6 +14,9 @@ import { loadFoodsFromCSV } from './utils/csvParser'
 const router = useRouter()
 const route = useRoute()
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')
+const apiUrl = (path) => `${API_BASE_URL}${path}`
+
 const showCameraPopup = ref(false)
 const showResultsPopup = ref(false)
 const showRejectConfirm = ref(false)
@@ -104,7 +107,7 @@ const isOnInventoryPage = computed(() => route.path === '/inventory')
 // Load pending items from database
 const loadPendingItems = async () => {
   try {
-    const response = await fetch('http://localhost:5000/api/foods/pending')
+    const response = await fetch(apiUrl('/api/foods/pending'))
     if (response.ok) {
       const pendingFoods = await response.json()
       
@@ -140,7 +143,7 @@ const loadPendingItems = async () => {
 
 const loadOutgoingItems = async () => {
   try {
-    const response = await fetch('http://localhost:5000/api/foods/outgoing')
+    const response = await fetch(apiUrl('/api/foods/outgoing'))
     if (response.ok) {
       const outgoingFoods = await response.json()
       outgoingItems.value = outgoingFoods.map(food => ({
@@ -240,7 +243,7 @@ const handleFinishScanning = async (items) => {
         claimed_removed_ids: [...new Set(claimedRemovedIds)]
       }
       
-      const response = await fetch('http://localhost:5000/api/foods', {
+      const response = await fetch(apiUrl('/api/foods'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -322,7 +325,7 @@ const handleConfirm = async (updatedData) => {
         confidence: updatedData.confidence
       }
       
-      const response = await fetch(`http://localhost:5000/api/foods/${item.id}`, {
+      const response = await fetch(apiUrl(`/api/foods/${item.id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -373,7 +376,7 @@ const handleRemovePendingItem = async () => {
   // Delete the item from database
   if (selectedItem.value) {
     try {
-      const response = await fetch(`http://localhost:5000/api/foods/${selectedItem.value.id}`, {
+      const response = await fetch(apiUrl(`/api/foods/${selectedItem.value.id}`), {
         method: 'DELETE'
       })
       
@@ -394,7 +397,7 @@ const handleRemovePendingItem = async () => {
 
 const handleSwitchToIncoming = async (itemId) => {
   try {
-    const response = await fetch(`http://localhost:5000/api/foods/${itemId}/switch-to-incoming`, {
+    const response = await fetch(apiUrl(`/api/foods/${itemId}/switch-to-incoming`), {
       method: 'POST'
     })
     if (response.ok) {
@@ -410,7 +413,7 @@ const handleSwitchToIncoming = async (itemId) => {
 
 const handleMarkAsNew = async (itemId) => {
   try {
-    const response = await fetch(`http://localhost:5000/api/foods/${itemId}/mark-as-new`, {
+    const response = await fetch(apiUrl(`/api/foods/${itemId}/mark-as-new`), {
       method: 'POST'
     })
     if (response.ok) {
@@ -494,7 +497,7 @@ const handleOkDisambiguation = async (disambiguationId) => {
     dis_type: item.type
   }
   try {
-    const resp = await fetch('http://localhost:5000/api/foods/resolve-disambiguation', {
+    const resp = await fetch(apiUrl('/api/foods/resolve-disambiguation'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -516,14 +519,14 @@ const handleRejectAll = () => {
 
 const confirmRejectAll = async () => {
   try {
-    const pendingResp = await fetch('http://localhost:5000/api/foods/pending/delete', { method: 'DELETE' })
+    const pendingResp = await fetch(apiUrl('/api/foods/pending/delete'), { method: 'DELETE' })
     if (pendingResp.ok) {
       detectedItems.value = []
       showRejectConfirm.value = false
     } else {
       console.error('Failed to delete pending items')
     }
-    const outgoingResp = await fetch('http://localhost:5000/api/foods/outgoing/restore', { method: 'POST' })
+    const outgoingResp = await fetch(apiUrl('/api/foods/outgoing/restore'), { method: 'POST' })
     if (outgoingResp.ok) {
       outgoingItems.value = []
     }
@@ -546,7 +549,7 @@ const closeItemList = async () => {
 
     // Confirm pending items
     if (detectedItems.value.length > 0) {
-      const confirmResp = await fetch('http://localhost:5000/api/foods/pending/confirm', {
+      const confirmResp = await fetch(apiUrl('/api/foods/pending/confirm'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       })
@@ -559,7 +562,7 @@ const closeItemList = async () => {
 
     // Delete outgoing items
     if (outgoingItems.value.length > 0) {
-      const outgoingResp = await fetch('http://localhost:5000/api/foods/outgoing/delete', { method: 'DELETE' })
+      const outgoingResp = await fetch(apiUrl('/api/foods/outgoing/delete'), { method: 'DELETE' })
       if (outgoingResp.ok) {
         outgoingItems.value = []
       }

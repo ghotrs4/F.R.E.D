@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api'
+const API_URL = `${(import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')}/api`
 
 export async function loadFoodsFromCSV() {
   try {

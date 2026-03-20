@@ -28,6 +28,7 @@ const isComparing   = ref(false)
 const compareResult = ref(null)
 const compareError  = ref(null)
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')
 const GENERIC_GEMINI_UNAVAILABLE = 'Gemini is offline or took too long.'
 
 // Build the comparison panel immediately from the batch-time local result,
@@ -73,7 +74,7 @@ const runComparison = async () => {
   try {
     const formData = new FormData()
     formData.append('image', props.imageBlob, 'scan.jpg')
-    const response = await fetch('http://localhost:5000/api/classify-food/compare', {
+    const response = await fetch(`${API_BASE_URL}/api/classify-food/compare`, {
       method: 'POST',
       body: formData
     })

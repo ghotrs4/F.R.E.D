@@ -24,6 +24,7 @@ const capturedBlobs = ref([])
 const statusMessage = ref('')
 const isBatchProcessing = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:5000`).replace(/\/$/, '')
 const captureCooldown = ref(false)
 const debugCanvasRef = ref(null)
 const showDebugOverlay = ref(false)
@@ -139,7 +140,7 @@ const finishScanning = async () => {
       formData.append(`image_${i}`, blob, `capture_${i}.jpg`)
     })
     
-    const response = await fetch('http://localhost:5000/api/classify-food/batch', {
+    const response = await fetch(`${API_BASE_URL}/api/classify-food/batch`, {
       method: 'POST',
       body: formData
     })
