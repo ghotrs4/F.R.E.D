@@ -3,6 +3,7 @@ F.R.E.D. Sensor Interface
 Reads serial data from ESP32 over Bluetooth (BluetoothSerial / RFCOMM)
 """
 
+import os
 import re
 import threading
 import time
@@ -30,7 +31,7 @@ class SensorInterface:
         "humidity":    re.compile(r">Humidity:([\d.]+)"),
     }
 
-    def __init__(self, port: str | None = "COM5", baudrate: int = 115200):
+    def __init__(self, port: str | None = None, baudrate: int = 115200):
         """
         Initialize sensor interface.
 
@@ -40,7 +41,8 @@ class SensorInterface:
             baudrate: Must match BluetoothSerial – typically ignored for BT but
                       kept for compatibility when switching to wired UART.
         """
-        self._preferred_port = port
+        env_port = os.environ.get("SENSOR_PORT")
+        self._preferred_port = env_port if env_port else port
         self._baudrate = baudrate
         self._is_connected = False
         self._serial: serial.Serial | None = None
@@ -59,6 +61,7 @@ class SensorInterface:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._running = False
+        self._last_loop_error: str | None = None
 
     # ------------------------------------------------------------------
     # Connection management
@@ -93,7 +96,12 @@ class SensorInterface:
         first-connect happens asynchronously in the background.
         """
         if self._running:
-            return self._is_connected
+            if self._thread and not self._thread.is_alive():
+                # Thread was expected to be running but died; restart it.
+                print("[SensorInterface] Reader thread stopped unexpectedly; restarting")
+                self._running = False
+            else:
+                return self._is_connected
         self._running = True
         self._thread = threading.Thread(target=self._connection_loop, daemon=True)
         self._thread.start()
@@ -132,10 +140,18 @@ class SensorInterface:
         — When disconnected: sweep available COM ports until one responds.
         """
         while self._running:
-            if not self._is_connected:
-                self._sweep_for_connection()
-            else:
-                self._read_line()
+            try:
+                if not self._is_connected:
+                    self._sweep_for_connection()
+                else:
+                    self._read_line()
+            except Exception as e:
+                # Keep the polling loop alive even if an unexpected runtime
+                # exception occurs (e.g., transient OS/serial state issues).
+                self._last_loop_error = str(e)
+                print(f"[SensorInterface] Polling loop error: {e}")
+                self._mark_disconnected()
+                time.sleep(1.0)
 
     def _get_candidate_ports(self) -> list[str]:
         """Return COM ports to try, with the preferred port first."""
@@ -372,7 +388,7 @@ class SensorInterface:
 _global_sensor: SensorInterface | None = None
 
 
-def get_sensor(port: str = "COM5") -> SensorInterface:
+def get_sensor(port: str | None = None) -> SensorInterface:
     """
     Get (or create) the global SensorInterface instance.
 
@@ -383,4 +399,9 @@ def get_sensor(port: str = "COM5") -> SensorInterface:
     if _global_sensor is None:
         _global_sensor = SensorInterface(port=port)
         _global_sensor.connect()
+    else:
+        # Self-heal if the polling thread died or was never started.
+        thread_alive = _global_sensor._thread is not None and _global_sensor._thread.is_alive()
+        if not _global_sensor._running or not thread_alive:
+            _global_sensor.connect()
     return _global_sensor
