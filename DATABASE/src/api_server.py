@@ -117,7 +117,30 @@ def _build_local_primary_result(local_result):
     }
 
 
-def _attach_grounded_spoilage_params(results):
+def _request_gemini_enabled(default=True):
+    """Read per-request Gemini toggle sent by the frontend.
+
+    Accepts form or JSON values. Missing/invalid values fall back to default.
+    """
+    raw_value = None
+    if request.form and 'gemini_enabled' in request.form:
+        raw_value = request.form.get('gemini_enabled')
+    elif request.is_json:
+        payload = request.get_json(silent=True) or {}
+        raw_value = payload.get('gemini_enabled')
+
+    if raw_value is None:
+        return default
+
+    value = str(raw_value).strip().lower()
+    if value in ('1', 'true', 'yes', 'on'):
+        return True
+    if value in ('0', 'false', 'no', 'off'):
+        return False
+    return default
+
+
+def _attach_grounded_spoilage_params(results, allow_gemini_lookup=True):
     """Populate spoilage_parameters from grounded cache/API for detected foods."""
     detected_foods = [
         {
@@ -131,7 +154,7 @@ def _attach_grounded_spoilage_params(results):
     if not detected_foods:
         return
 
-    grounded_params = get_grounded_spoilage_params(detected_foods)
+    grounded_params = get_grounded_spoilage_params(detected_foods) if allow_gemini_lookup else {}
     param_keys = [
         'shelf_life_days', 'optimal_temp', 'temp_sensitivity',
         'temp_abuse_threshold', 'optimal_humidity', 'humidity_sensitivity', 'optimal_packaging'
@@ -2392,6 +2415,7 @@ def classify_food_batch():
             return jsonify({'error': 'No image files provided'}), 400
 
         n = len(image_files)
+        gemini_enabled = _request_gemini_enabled(default=True)
         temp_paths = []
         pil_images = []
 
@@ -2467,7 +2491,7 @@ Return ONLY the JSON array, no extra text.
             # Build content list: prompt then all images. If Gemini fails, keep local-only results.
             used_gemini_indices = set()
             gemini_error_message = None
-            if gemini_client:
+            if gemini_enabled and gemini_client:
                 try:
                     content = [prompt] + pil_images
                     response = _run_with_timeout(
@@ -2495,7 +2519,7 @@ Return ONLY the JSON array, no extra text.
                     gemini_error_message = str(gemini_err)
                     print(f"[classify batch] Gemini failed, using local-only predictions: {gemini_err}")
             else:
-                gemini_error_message = 'Gemini API key not configured'
+                gemini_error_message = 'Gemini disabled' if not gemini_enabled else 'Gemini API key not configured'
 
             # Always attach local_result so frontend compare panel still works.
             for i, result in enumerate(results):
@@ -2507,7 +2531,7 @@ Return ONLY the JSON array, no extra text.
                     result['prediction_source'] = 'local_fallback'
                     result['gemini_error'] = gemini_error_message or 'Gemini response missing or invalid'
 
-            _attach_grounded_spoilage_params(results)
+            _attach_grounded_spoilage_params(results, allow_gemini_lookup=gemini_enabled)
 
             return jsonify(results)
 
@@ -2600,10 +2624,11 @@ Guidelines:
 - If no food is detected, fill out the fields with 'No Food Detected' for food name and null for the rest
 """
             
+            gemini_enabled = _request_gemini_enabled(default=True)
             prediction_source = 'local_fallback'
-            gemini_error_message = 'Gemini API key not configured' if not gemini_client else None
+            gemini_error_message = None
 
-            if gemini_client:
+            if gemini_enabled and gemini_client:
                 try:
                     response = _run_with_timeout(
                         lambda: gemini_client.models.generate_content(
@@ -2620,8 +2645,10 @@ Guidelines:
                 except Exception as gemini_err:
                     gemini_error_message = str(gemini_err)
                     print(f"[classify] Gemini failed, using local-only prediction: {gemini_err}")
+            else:
+                gemini_error_message = 'Gemini disabled' if not gemini_enabled else 'Gemini API key not configured'
 
-            _attach_grounded_spoilage_params([result])
+            _attach_grounded_spoilage_params([result], allow_gemini_lookup=gemini_enabled)
             result['local_result'] = local_raw_result
             result['prediction_source'] = prediction_source
             result['gemini_error'] = gemini_error_message

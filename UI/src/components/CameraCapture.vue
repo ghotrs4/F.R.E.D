@@ -7,6 +7,12 @@ import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 
 const emit = defineEmits(['close', 'finish', 'classifying'])
+const props = defineProps({
+  geminiEnabled: {
+    type: Boolean,
+    default: true
+  }
+})
 
 const videoRef = ref(null)
 const canvasRef = ref(null)
@@ -31,6 +37,75 @@ const API_BASE_URL = (
 const captureCooldown = ref(false)
 const debugCanvasRef = ref(null)
 const showDebugOverlay = ref(false)
+const tapTimer = ref(null)
+const lastTapTimestamp = ref(0)
+const lastGestureTimestamp = ref(0)
+
+const DOUBLE_TAP_WINDOW_MS = 280
+const GESTURE_DEDUPE_MS = 80
+
+const clearTapTimer = () => {
+  if (tapTimer.value) {
+    clearTimeout(tapTimer.value)
+    tapTimer.value = null
+  }
+}
+
+const registerFrameTap = () => {
+  if (isBatchProcessing.value) return
+
+  const now = Date.now()
+  const isDoubleTap = now - lastTapTimestamp.value <= DOUBLE_TAP_WINDOW_MS
+
+  if (isDoubleTap) {
+    clearTapTimer()
+    lastTapTimestamp.value = 0
+    toggleDebugOverlay()
+    return
+  }
+
+  lastTapTimestamp.value = now
+  clearTapTimer()
+  tapTimer.value = setTimeout(() => {
+    if (!isBatchProcessing.value && !captureCooldown.value) {
+      captureImage()
+    }
+    tapTimer.value = null
+    lastTapTimestamp.value = 0
+  }, DOUBLE_TAP_WINDOW_MS)
+}
+
+const handleFramePointerDown = (event) => {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  const now = Date.now()
+  if (now - lastGestureTimestamp.value < GESTURE_DEDUPE_MS) return
+  lastGestureTimestamp.value = now
+  registerFrameTap()
+}
+
+const handleFrameClick = () => {
+  const now = Date.now()
+  if (now - lastGestureTimestamp.value < GESTURE_DEDUPE_MS) return
+  lastGestureTimestamp.value = now
+  registerFrameTap()
+}
+
+const handleFrameMouseDown = (event) => {
+  if (event.button !== 0) return
+  const now = Date.now()
+  if (now - lastGestureTimestamp.value < GESTURE_DEDUPE_MS) return
+  lastGestureTimestamp.value = now
+  registerFrameTap()
+}
+
+const handleFrameTouchStart = (event) => {
+  // Fallback for browsers that do not emit PointerEvents consistently.
+  event.preventDefault()
+  const now = Date.now()
+  if (now - lastGestureTimestamp.value < GESTURE_DEDUPE_MS) return
+  lastGestureTimestamp.value = now
+  registerFrameTap()
+}
 
 const toggleDebugOverlay = () => {
   showDebugOverlay.value = !showDebugOverlay.value
@@ -139,6 +214,7 @@ const finishScanning = async () => {
   
   try {
     const formData = new FormData()
+    formData.append('gemini_enabled', props.geminiEnabled ? 'true' : 'false')
     capturedBlobs.value.forEach((blob, i) => {
       formData.append(`image_${i}`, blob, `capture_${i}.jpg`)
     })
@@ -345,6 +421,7 @@ const stopDetection = () => {
 }
 
 const close = () => {
+  clearTapTimer()
   stopCamera()
   emit('close')
 }
@@ -388,6 +465,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearTapTimer()
   stopCamera()
   window.removeEventListener('keydown', handleKeyDown)
 })
@@ -412,18 +490,28 @@ onUnmounted(() => {
           <button class="retry-button" @click="startCamera">Retry</button>
         </div>
         
-        <div v-else class="camera-container">
+        <div
+          v-else
+          class="camera-container"
+          @pointerdown.capture="handleFramePointerDown"
+          @touchstart.capture="handleFrameTouchStart"
+          @mousedown.capture="handleFrameMouseDown"
+          @click="handleFrameClick"
+        >
           <video 
             ref="videoRef" 
             autoplay 
             playsinline
             class="camera-video"
+            @pointerdown="handleFramePointerDown"
+            @touchstart="handleFrameTouchStart"
+            @mousedown="handleFrameMouseDown"
           ></video>
           <canvas ref="canvasRef" style="display: none;"></canvas>
           <canvas ref="debugCanvasRef" class="debug-overlay"></canvas>
           
           <div class="camera-guide">
-            <div class="guide-box" :class="{ 'detected': objectDetected, 'processing': isProcessing }">
+            <div class="guide-box" :class="{ 'detected': objectDetected, 'processing': isBatchProcessing }">
             </div>
             <div v-if="isCapturing" class="progress-bar-container">
               <div class="progress-bar"></div>
@@ -564,6 +652,7 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   max-width: 640px;
+  touch-action: manipulation;
 }
 
 .camera-video {

@@ -27,11 +27,93 @@ const detectedItems = ref([])
 const selectedItem = ref(null)
 const isClassifying = ref(false)
 const classifyingCount = ref(0)
+const isFullscreen = ref(false)
+const shouldRestoreFullscreen = ref(false)
+const geminiEnabled = ref(true)
 const classificationAnimRef = ref(null)
 const classificationAnimInstance = shallowRef(null)
 const imageBlobCache = ref({})    // food name (lowercase) -> Blob, for in-session compare
 const localResultCache = ref({})  // food name (lowercase) -> local model result, for in-session compare
 const outgoingItems = ref([])
+
+const FULLSCREEN_PREF_KEY = 'fred_fullscreen_enabled'
+const GEMINI_ENABLED_PREF_KEY = 'fred_gemini_enabled'
+
+const persistFullscreenPreference = (enabled) => {
+  try {
+    localStorage.setItem(FULLSCREEN_PREF_KEY, enabled ? 'true' : 'false')
+  } catch {}
+}
+
+const loadFullscreenPreference = () => {
+  try {
+    return localStorage.getItem(FULLSCREEN_PREF_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+const loadGeminiPreference = () => {
+  try {
+    const stored = localStorage.getItem(GEMINI_ENABLED_PREF_KEY)
+    return stored === null ? true : stored === 'true'
+  } catch {
+    return true
+  }
+}
+
+const setGeminiEnabled = (enabled) => {
+  geminiEnabled.value = Boolean(enabled)
+  try {
+    localStorage.setItem(GEMINI_ENABLED_PREF_KEY, geminiEnabled.value ? 'true' : 'false')
+  } catch {}
+}
+
+const syncFullscreenState = () => {
+  isFullscreen.value = Boolean(document.fullscreenElement)
+  persistFullscreenPreference(isFullscreen.value)
+}
+
+const removeFullscreenRestoreListeners = () => {
+  document.removeEventListener('pointerdown', requestFullscreenIfPreferred, true)
+  document.removeEventListener('keydown', requestFullscreenIfPreferred, true)
+  document.removeEventListener('touchstart', requestFullscreenIfPreferred, true)
+}
+
+async function requestFullscreenIfPreferred() {
+  if (!shouldRestoreFullscreen.value || document.fullscreenElement) {
+    removeFullscreenRestoreListeners()
+    return
+  }
+
+  try {
+    await document.documentElement.requestFullscreen()
+    shouldRestoreFullscreen.value = false
+    removeFullscreenRestoreListeners()
+  } catch (error) {
+    console.error('Fullscreen restore failed:', error)
+  }
+}
+
+const addFullscreenRestoreListeners = () => {
+  document.addEventListener('pointerdown', requestFullscreenIfPreferred, true)
+  document.addEventListener('keydown', requestFullscreenIfPreferred, true)
+  document.addEventListener('touchstart', requestFullscreenIfPreferred, true)
+}
+
+const toggleFullscreen = async () => {
+  try {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen()
+      shouldRestoreFullscreen.value = false
+    } else {
+      await document.exitFullscreen()
+      shouldRestoreFullscreen.value = false
+    }
+  } catch (error) {
+    console.error('Fullscreen toggle failed:', error)
+  }
+}
 
 const handleClassifying = (value) => {
   isClassifying.value = Boolean(value)
@@ -603,22 +685,52 @@ const handleKeyDown = (event) => {
 onMounted(() => {
   loadPendingItems()
   loadOutgoingItems()
+  geminiEnabled.value = loadGeminiPreference()
+
+  const wantsFullscreen = loadFullscreenPreference()
+  isFullscreen.value = Boolean(document.fullscreenElement)
+  if (wantsFullscreen && !document.fullscreenElement) {
+    shouldRestoreFullscreen.value = true
+    addFullscreenRestoreListeners()
+  }
+
   window.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('fullscreenchange', syncFullscreenState)
 })
 
 onUnmounted(() => {
   destroyClassificationAnimation()
   window.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
+  removeFullscreenRestoreListeners()
 })
 </script>
 
 <template>
   <SidebarProvider class="sidebar-provider">
-    <AppSidebar />
+    <AppSidebar :gemini-enabled="geminiEnabled" @toggle-gemini="setGeminiEnabled" />
     <div class="content-wrapper">
       <SidebarTrigger class="sidebar-trigger" />
       
       <main>
+        <div class="top-right-controls">
+          <button class="scan-quick-btn" @click="openCameraPopup" title="Open scanner">scan</button>
+          <button
+            class="fullscreen-corner-btn"
+            @click="toggleFullscreen"
+            :aria-pressed="isFullscreen.toString()"
+            :aria-label="isFullscreen ? 'Exit full screen' : 'Enter full screen'"
+            :title="isFullscreen ? 'Exit full screen' : 'Enter full screen'"
+          >
+            <span class="fs-icon" :class="{ inward: isFullscreen }" aria-hidden="true">
+              <span class="corner tl"></span>
+              <span class="corner tr"></span>
+              <span class="corner bl"></span>
+              <span class="corner br"></span>
+            </span>
+          </button>
+        </div>
+
         <header class="global-header">
           <RouterLink to="/" class="global-logo-link" aria-label="Go to home page">
             <img :src="appLogo" alt="FRED logo" class="global-logo" />
@@ -686,6 +798,7 @@ onUnmounted(() => {
     <!-- Global Camera Popup -->
     <CameraCapture 
       v-if="showCameraPopup"
+      :gemini-enabled="geminiEnabled"
       @close="closeCameraPopup"
       @finish="handleFinishScanning"
       @classifying="handleClassifying"
@@ -749,6 +862,8 @@ onUnmounted(() => {
 }
 
 .content-wrapper {
+  --top-control-offset: 1rem;
+  --side-control-offset: 1rem;
   display: flex;
   width: 100%;
   height: 100vh;
@@ -758,7 +873,7 @@ onUnmounted(() => {
 
 .sidebar-trigger {
   flex-shrink: 0;
-  padding: 1rem;
+  padding: var(--top-control-offset) var(--side-control-offset);
   display: flex;
   align-items: flex-start;
 }
@@ -780,6 +895,176 @@ main {
   justify-content: center;
   gap: 0.5rem;
   padding: 1.25rem 0 1rem 0;
+}
+
+.top-right-controls {
+  position: fixed;
+  top: var(--top-control-offset);
+  right: var(--side-control-offset);
+  z-index: 120;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scan-quick-btn {
+  height: 2.5rem;
+  padding: 0 0.8rem;
+  border: 1px solid oklch(0.35 0.03 260);
+  border-radius: 0.7rem;
+  background: oklch(0.2 0.02 250);
+  color: oklch(0.92 0.01 250);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.scan-quick-btn:hover {
+  background: oklch(0.28 0.03 250);
+  border-color: oklch(0.55 0.05 260);
+  transform: translateY(-1px);
+}
+
+.scan-quick-btn:focus-visible {
+  outline: 2px solid oklch(0.7 0.14 250);
+  outline-offset: 2px;
+}
+
+.fullscreen-corner-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid oklch(0.35 0.03 260);
+  border-radius: 0.7rem;
+  background: oklch(0.2 0.02 250);
+  color: oklch(0.92 0.01 250);
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.fullscreen-corner-btn:hover {
+  background: oklch(0.28 0.03 250);
+  border-color: oklch(0.55 0.05 260);
+  transform: translateY(-1px);
+}
+
+.fullscreen-corner-btn:focus-visible {
+  outline: 2px solid oklch(0.7 0.14 250);
+  outline-offset: 2px;
+}
+
+.fs-icon {
+  position: relative;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.corner {
+  position: absolute;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-color: currentColor;
+  border-style: solid;
+  border-width: 0;
+}
+
+.corner.tl {
+  top: 0;
+  left: 0;
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+
+.corner.tr {
+  top: 0;
+  right: 0;
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+
+.corner.bl {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+
+.corner.br {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+}
+
+.fs-icon.inward .corner.tl {
+  top: 0.06rem;
+  left: 0.06rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-top-width: 0;
+  border-left-width: 0;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+}
+
+.fs-icon.inward .corner.tr {
+  top: 0.06rem;
+  right: 0.06rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-top-width: 0;
+  border-right-width: 0;
+  border-left-width: 2px;
+  border-bottom-width: 2px;
+}
+
+.fs-icon.inward .corner.bl {
+  bottom: 0.06rem;
+  left: 0.06rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-bottom-width: 0;
+  border-left-width: 0;
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+
+.fs-icon.inward .corner.br {
+  bottom: 0.06rem;
+  right: 0.06rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-bottom-width: 0;
+  border-right-width: 0;
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+
+@media (max-width: 768px) {
+  .content-wrapper {
+    --top-control-offset: 0.75rem;
+    --side-control-offset: 0.75rem;
+  }
+
+  .top-right-controls {
+    gap: 0.4rem;
+  }
+
+  .fullscreen-corner-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .scan-quick-btn {
+    height: 2.25rem;
+    padding: 0 0.65rem;
+    font-size: 0.8rem;
+  }
 }
 
 .global-logo {

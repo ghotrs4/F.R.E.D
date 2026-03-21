@@ -571,16 +571,23 @@ def predict_spoilage(
     gas_result = calculate_gas_factor(mq_readings, food_category, gas_exposure_hours)
     gas_factor = gas_result['factor']
 
-    # Calculate effective shelf life
-    effective_shelf_life = baseline_shelf_life * temp_factor * humidity_factor * abuse_factor * packaging_factor * gas_factor
-    
-    # Special case: produce in humidity-controlled storage lasts longer
+    # Apply current environment to the baseline life that remains.
+    # This avoids assuming current conditions were present for the full elapsed period.
+    current_condition_factor = temp_factor * humidity_factor * abuse_factor * packaging_factor * gas_factor
+    remaining_baseline_life = max(0.0, baseline_shelf_life - days_since_purchase)
+
+    # Special case: produce in humidity-controlled storage lasts longer.
     if food_category == 'produce' and storage_location.lower() == 'humidity-controlled':
-        effective_shelf_life *= 1.3
-    
+        current_condition_factor *= 1.3
+
+    effective_remaining_shelf_life = remaining_baseline_life * current_condition_factor
+
+    # Keep a projected total effective life for scoring/metadata compatibility.
+    projected_effective_shelf_life = days_since_purchase + effective_remaining_shelf_life
+
     # Calculate outputs
-    freshness_score = calculate_freshness_score(days_since_purchase, effective_shelf_life)
-    days_until_spoilage = max(0, effective_shelf_life - days_since_purchase)
+    freshness_score = calculate_freshness_score(days_since_purchase, projected_effective_shelf_life)
+    days_until_spoilage = effective_remaining_shelf_life
     safety_category = categorize_safety(freshness_score, days_until_spoilage)
     
     # Generate warnings
@@ -605,7 +612,10 @@ def predict_spoilage(
         'warnings': warnings,
         'metadata': {
             'days_since_purchase': round(days_since_purchase, 1),
-            'effective_shelf_life': round(effective_shelf_life, 1),
+            'effective_shelf_life': round(projected_effective_shelf_life, 1),
+            'effective_remaining_shelf_life': round(effective_remaining_shelf_life, 1),
+            'remaining_baseline_life': round(remaining_baseline_life, 1),
+            'current_condition_factor': round(current_condition_factor, 3),
             'temp_factor': round(temp_factor, 3),
             'humidity_factor': round(humidity_factor, 3),
             'abuse_factor': round(abuse_factor, 3),
