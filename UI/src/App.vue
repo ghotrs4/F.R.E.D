@@ -10,15 +10,10 @@ import FoodScanResults from './components/FoodScanResults.vue'
 import appLogo from './assets/fred.svg'
 import fredThinkAnimation from './assets/fred_think.json'
 import { loadFoodsFromCSV } from './utils/csvParser'
+import { apiUrl } from './utils/apiBase'
 
 const router = useRouter()
 const route = useRoute()
-
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
-).replace(/\/$/, '')
-const apiUrl = (path) => `${API_BASE_URL}${path}`
 
 const showCameraPopup = ref(false)
 const showResultsPopup = ref(false)

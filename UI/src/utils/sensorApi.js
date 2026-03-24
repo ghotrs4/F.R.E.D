@@ -1,8 +1,7 @@
 // API functions for sensor data
-const API_BASE_URL = `${(
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
-).replace(/\/$/, '')}/api`
+import { apiUrl } from './apiBase'
+
+const API_BASE_URL = apiUrl('/api')
 
 /**
  * Fetch current sensor readings

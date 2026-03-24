@@ -5,6 +5,7 @@
 <script setup>
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision'
+import { apiUrl } from '../utils/apiBase'
 
 const emit = defineEmits(['close', 'finish', 'classifying'])
 const props = defineProps({
@@ -30,10 +31,6 @@ const capturedBlobs = ref([])
 const statusMessage = ref('')
 const isBatchProcessing = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
-).replace(/\/$/, '')
 const captureCooldown = ref(false)
 const debugCanvasRef = ref(null)
 const showDebugOverlay = ref(false)
@@ -219,7 +216,7 @@ const finishScanning = async () => {
       formData.append(`image_${i}`, blob, `capture_${i}.jpg`)
     })
     
-    const response = await fetch(`${API_BASE_URL}/api/classify-food/batch`, {
+    const response = await fetch(apiUrl('/api/classify-food/batch'), {
       method: 'POST',
       body: formData
     })

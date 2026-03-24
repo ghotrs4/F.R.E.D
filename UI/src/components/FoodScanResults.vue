@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { apiUrl } from '../utils/apiBase'
 
 const props = defineProps({
   predictedClass: String,
@@ -28,10 +29,6 @@ const isComparing   = ref(false)
 const compareResult = ref(null)
 const compareError  = ref(null)
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? '' : `http://${window.location.hostname}:5000`)
-).replace(/\/$/, '')
 const GENERIC_GEMINI_UNAVAILABLE = 'Gemini is offline or took too long.'
 
 // Build the comparison panel immediately from the batch-time local result,
@@ -77,7 +74,7 @@ const runComparison = async () => {
   try {
     const formData = new FormData()
     formData.append('image', props.imageBlob, 'scan.jpg')
-    const response = await fetch(`${API_BASE_URL}/api/classify-food/compare`, {
+    const response = await fetch(apiUrl('/api/classify-food/compare'), {
       method: 'POST',
       body: formData
     })

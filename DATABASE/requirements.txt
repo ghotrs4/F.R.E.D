@@ -4,4 +4,6 @@ requests
 python-dotenv
 google-genai
 pillow
+torch
+torchvision
 pyserial
