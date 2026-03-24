@@ -30,7 +30,7 @@ From the `UI` directory:
 npm run dev
 ```
 
-Vite will print the local URL (usually `http://localhost:5173`).
+Vite will print the local URL (usually `https://localhost:5173`).
 
 ## Build for Production
 ```bash

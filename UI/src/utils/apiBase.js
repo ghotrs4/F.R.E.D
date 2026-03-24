@@ -4,12 +4,7 @@ const resolveDefaultApiBaseUrl = () => {
   if (import.meta.env.DEV) return ''
   if (typeof window === 'undefined') return ''
 
-  // Prevent mixed-content requests when UI is served over HTTPS.
-  if (window.location.protocol === 'https:') {
-    return ''
-  }
-
-  return `http://${window.location.hostname}:5000`
+  return `https://${window.location.hostname}:5000`
 }
 
 export const API_BASE_URL = trimTrailingSlash(

@@ -1,16 +1,19 @@
 import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
+    basicSsl(),
     tailwindcss(),
   ],
   server: {
     host: true,
+    https: true,
     proxy: {
       '/api': {
         target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:5000',
