@@ -222,24 +222,33 @@ const finishScanning = async () => {
     })
     
     const results = []
-    if (response.ok) {
-      const classifications = await response.json()
-      const items = Array.isArray(classifications) ? classifications : []
-      items.forEach((result, index) => {
-        if (
-          result.predicted_class &&
-          result.predicted_class.toLowerCase() !== 'no food detected' &&
-          !result.error
-        ) {
-          results.push({
-            id: Date.now() + results.length,
-            timestamp: new Date().toLocaleTimeString(),
-            ...result,
-            imageBlob: capturedBlobs.value[index] ?? null
-          })
-        }
-      })
+    if (!response.ok) {
+      let backendMessage = ''
+      try {
+        const errorPayload = await response.json()
+        backendMessage = errorPayload?.error || JSON.stringify(errorPayload)
+      } catch {
+        backendMessage = await response.text()
+      }
+      throw new Error(`Batch classification failed (${response.status}): ${backendMessage || 'unknown error'}`)
     }
+
+    const classifications = await response.json()
+    const items = Array.isArray(classifications) ? classifications : []
+    items.forEach((result, index) => {
+      if (
+        result.predicted_class &&
+        result.predicted_class.toLowerCase() !== 'no food detected' &&
+        !result.error
+      ) {
+        results.push({
+          id: Date.now() + results.length,
+          timestamp: new Date().toLocaleTimeString(),
+          ...result,
+          imageBlob: capturedBlobs.value[index] ?? null
+        })
+      }
+    })
 
     batchProgress.value = { current: capturedBlobs.value.length, total: capturedBlobs.value.length }
     emit('finish', results)

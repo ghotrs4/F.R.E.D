@@ -262,7 +262,7 @@ const handleFinishScanning = async (items) => {
   showCameraPopup.value = false
   
   if (items.length === 0) {
-    // alert('No food items were detected. Please try again.')
+    alert('No predictions were returned. Check browser DevTools Network for /api/classify-food/batch and backend logs for Gemini/API errors.')
     return
   }
   
