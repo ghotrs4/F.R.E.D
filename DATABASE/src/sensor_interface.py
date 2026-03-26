@@ -68,7 +68,7 @@ class SensorInterface:
     # ------------------------------------------------------------------
 
     # Seconds of silence before declaring the connection dead
-    _STALE_TIMEOUT: float = 15.0
+    _STALE_TIMEOUT: float = 120.0
     # Seconds between port-sweep retries when disconnected
     _RECONNECT_INTERVAL: float = 5.0
     # Seconds to wait for valid sensor lines when probing a candidate port.
