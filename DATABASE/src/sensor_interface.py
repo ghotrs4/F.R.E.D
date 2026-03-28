@@ -53,6 +53,14 @@ class SensorInterface:
             self._env_int('SENSOR_MAX_CONSECUTIVE_SERIAL_ERRORS', 3)
         )
         self._consecutive_serial_errors = 0
+        # RFCOMM on Linux can intermittently raise "readiness to read but
+        # returned no data" despite a healthy stream. Treat those as transient
+        # unless they persist beyond this threshold.
+        self._max_transient_empty_read_errors = max(
+            1,
+            self._env_int('SENSOR_MAX_TRANSIENT_EMPTY_READ_ERRORS', 25)
+        )
+        self._transient_empty_read_errors = 0
 
         # Load configurable validation ranges from environment variables.
         # These allow tuning acceptable value bounds without code changes.
@@ -381,8 +389,28 @@ class SensorInterface:
                 return
             line = raw.decode('utf-8', errors='ignore').strip()
             self._consecutive_serial_errors = 0
+            self._transient_empty_read_errors = 0
             self._parse_line(line)
         except (serial.SerialException, OSError, PermissionError) as e:
+            if self._is_transient_empty_read_error(e):
+                self._transient_empty_read_errors += 1
+                if self._transient_empty_read_errors < self._max_transient_empty_read_errors:
+                    print(
+                        f"[SensorInterface] Transient serial empty-read "
+                        f"({self._transient_empty_read_errors}/"
+                        f"{self._max_transient_empty_read_errors}): {e}"
+                    )
+                    try:
+                        ser.reset_input_buffer()
+                    except Exception:
+                        pass
+                    time.sleep(min(self._serial_timeout, 0.5))
+                    return
+                print(
+                    f"[SensorInterface] Serial empty-read persisted for "
+                    f"{self._transient_empty_read_errors} attempts: {e}"
+                )
+
             self._consecutive_serial_errors += 1
             if self._consecutive_serial_errors < self._max_consecutive_serial_errors:
                 print(
@@ -403,8 +431,16 @@ class SensorInterface:
             self._mq_raw_readings = {}
             self._mq_readings = {}
             self._consecutive_serial_errors = 0
+            self._transient_empty_read_errors = 0
         self._close_serial()
         print("[SensorInterface] Disconnected — will attempt reconnect")
+
+    def _is_transient_empty_read_error(self, err: Exception) -> bool:
+        """Detect known transient RFCOMM read exceptions from pyserial."""
+        msg = str(err).lower()
+        return (
+            "readiness to read" in msg and "returned no data" in msg
+        ) or "resource temporarily unavailable" in msg
 
     # ------------------------------------------------------------------
     # Data validation
