@@ -46,6 +46,13 @@ class SensorInterface:
         self._baudrate = baudrate
         self._is_connected = False
         self._serial: serial.Serial | None = None
+        self._serial_timeout = max(0.05, self._env_float('SENSOR_SERIAL_TIMEOUT', 10.0))
+        self._stale_timeout = max(2.0, self._env_float('SENSOR_STALE_TIMEOUT', self._STALE_TIMEOUT))
+        self._max_consecutive_serial_errors = max(
+            1,
+            self._env_int('SENSOR_MAX_CONSECUTIVE_SERIAL_ERRORS', 3)
+        )
+        self._consecutive_serial_errors = 0
 
         # Latest sensor readings
         self._temperature: float = 4.0
@@ -88,6 +95,26 @@ class SensorInterface:
     # Exponential moving average smoothing factor for MQ sensors.
     # Lower values reduce noise more aggressively, higher values react faster.
     _MQ_EMA_ALPHA: float = 0.2
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return default
 
     def connect(self) -> bool:
         """
@@ -174,7 +201,7 @@ class SensorInterface:
         returns False.
         """
         try:
-            ser = serial.Serial(port, self._baudrate, timeout=1)
+            ser = serial.Serial(port, self._baudrate, timeout=self._serial_timeout)
         except (serial.SerialException, OSError, PermissionError):
             return False
 
@@ -226,6 +253,7 @@ class SensorInterface:
                 self._serial = ser
                 self._is_connected = True
                 self._last_data_received = time.time()
+                self._consecutive_serial_errors = 0
             # Parse the lines collected during probe so readings aren't wasted
             for line in valid_lines:
                 self._parse_line(line)
@@ -269,14 +297,23 @@ class SensorInterface:
             if not raw:
                 # readline() timed out (1 s configured on port open)
                 if (self._last_data_received > 0 and
-                        time.time() - self._last_data_received > self._STALE_TIMEOUT):
-                    print(f"[SensorInterface] No data for {self._STALE_TIMEOUT}s "
+                        time.time() - self._last_data_received > self._stale_timeout):
+                    print(f"[SensorInterface] No data for {self._stale_timeout}s "
                           "— disconnecting")
                     self._mark_disconnected()
                 return
             line = raw.decode('utf-8', errors='ignore').strip()
+            self._consecutive_serial_errors = 0
             self._parse_line(line)
         except (serial.SerialException, OSError, PermissionError) as e:
+            self._consecutive_serial_errors += 1
+            if self._consecutive_serial_errors < self._max_consecutive_serial_errors:
+                print(
+                    f"[SensorInterface] Serial read error "
+                    f"({self._consecutive_serial_errors}/{self._max_consecutive_serial_errors}): {e}"
+                )
+                time.sleep(min(self._serial_timeout, 0.5))
+                return
             print(f"[SensorInterface] Serial error: {e}")
             self._mark_disconnected()
 
@@ -288,6 +325,7 @@ class SensorInterface:
             self._has_humidity = False
             self._mq_raw_readings = {}
             self._mq_readings = {}
+            self._consecutive_serial_errors = 0
         self._close_serial()
         print("[SensorInterface] Disconnected — will attempt reconnect")
 
@@ -372,7 +410,7 @@ class SensorInterface:
         # If the flag is still True but nothing has come in for a while,
         # treat it as disconnected (BT drop without raising an exception).
         stale = (self._last_data_received > 0 and
-                 time.time() - self._last_data_received > self._STALE_TIMEOUT)
+                 time.time() - self._last_data_received > self._stale_timeout)
         return not stale
 
     def has_environment_data(self) -> bool:
