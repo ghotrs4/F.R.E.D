@@ -54,6 +54,31 @@ class SensorInterface:
         )
         self._consecutive_serial_errors = 0
 
+        # Load configurable validation ranges from environment variables.
+        # These allow tuning acceptable value bounds without code changes.
+        self._temp_min = self._env_float('SENSOR_TEMP_MIN', self._TEMP_MIN)
+        self._temp_max = self._env_float('SENSOR_TEMP_MAX', self._TEMP_MAX)
+        self._temp_max_delta = max(
+            0.0, self._env_float('SENSOR_TEMP_MAX_DELTA', self._TEMP_MAX_DELTA)
+        )
+        self._hum_min = self._env_float('SENSOR_HUM_MIN', self._HUM_MIN)
+        self._hum_max = self._env_float('SENSOR_HUM_MAX', self._HUM_MAX)
+        self._hum_max_delta = max(
+            0.0, self._env_float('SENSOR_HUM_MAX_DELTA', self._HUM_MAX_DELTA)
+        )
+        self._pres_min = self._env_float('SENSOR_PRES_MIN', self._PRES_MIN)
+        self._pres_max = self._env_float('SENSOR_PRES_MAX', self._PRES_MAX)
+        self._pres_max_delta = max(
+            0.0, self._env_float('SENSOR_PRES_MAX_DELTA', self._PRES_MAX_DELTA)
+        )
+        self._alt_min = self._env_float('SENSOR_ALT_MIN', self._ALT_MIN)
+        self._alt_max = self._env_float('SENSOR_ALT_MAX', self._ALT_MAX)
+        self._alt_max_delta = max(
+            0.0, self._env_float('SENSOR_ALT_MAX_DELTA', self._ALT_MAX_DELTA)
+        )
+        self._mq_min = self._env_float('SENSOR_MQ_MIN', self._MQ_MIN)
+        self._mq_max = self._env_float('SENSOR_MQ_MAX', self._MQ_MAX)
+
         # Latest sensor readings
         self._temperature: float = 4.0
         self._humidity: float = 50.0
@@ -64,6 +89,18 @@ class SensorInterface:
         self._has_temperature = False
         self._has_humidity = False
 
+        # Data validation tracking
+        self._validation_errors: dict[str, int] = {
+            "temperature_out_of_range": 0,
+            "temperature_delta_exceeded": 0,
+            "humidity_out_of_range": 0,
+            "humidity_delta_exceeded": 0,
+            "pressure_out_of_range": 0,
+            "pressure_delta_exceeded": 0,
+            "altitude_out_of_range": 0,
+            "altitude_delta_exceeded": 0,
+            "mq_out_of_range": 0,
+        }
         self._last_data_received: float = 0.0   # epoch time of last valid parse
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -95,6 +132,46 @@ class SensorInterface:
     # Exponential moving average smoothing factor for MQ sensors.
     # Lower values reduce noise more aggressively, higher values react faster.
     _MQ_EMA_ALPHA: float = 0.2
+
+    # ================================================================
+    # Data validation constants (configurable via environment variables)
+    # ================================================================
+    # Temperature bounds (°C). Reasonable for food storage: -40 to 85.
+    # Configurable via SENSOR_TEMP_MIN and SENSOR_TEMP_MAX env vars.
+    _TEMP_MIN: float = -40.0
+    _TEMP_MAX: float = 85.0
+    # Maximum temperature change allowed between consecutive readings (°C).
+    # Prevents accepting a reading if it diverges by more than this from
+    # the previous value. Use 0 to disable. Configurable via SENSOR_TEMP_MAX_DELTA.
+    _TEMP_MAX_DELTA: float = 15.0
+
+    # Humidity bounds (%). Standard: 0 to 100.
+    # Configurable via SENSOR_HUM_MIN and SENSOR_HUM_MAX env vars.
+    _HUM_MIN: float = 0.0
+    _HUM_MAX: float = 100.0
+    # Max humidity change between consecutive readings (%).
+    # Configurable via SENSOR_HUM_MAX_DELTA.
+    _HUM_MAX_DELTA: float = 20.0
+
+    # Pressure bounds (hPa). Typical atmospheric: 950 to 1050 hPa.
+    # Configurable via SENSOR_PRES_MIN and SENSOR_PRES_MAX env vars.
+    _PRES_MIN: float = 800.0
+    _PRES_MAX: float = 1200.0
+    # Max pressure change allowed (hPa).
+    # Configurable via SENSOR_PRES_MAX_DELTA.
+    _PRES_MAX_DELTA: float = 50.0
+
+    # Altitude bounds (m). Reasonable: -400 (Dead Sea) to 9000 (commercial aviation).
+    # Configurable via SENSOR_ALT_MIN and SENSOR_ALT_MAX env vars.
+    _ALT_MIN: float = -400.0
+    _ALT_MAX: float = 9000.0
+    # Max altitude change (m). Configurable via SENSOR_ALT_MAX_DELTA.
+    _ALT_MAX_DELTA: float = 1000.0
+
+    # MQ sensor bounds (typically 0-4095 for 12-bit ADC).
+    # Configurable via SENSOR_MQ_MIN and SENSOR_MQ_MAX env vars.
+    _MQ_MIN: float = 0.0
+    _MQ_MAX: float = 4095.0
 
     @staticmethod
     def _env_float(name: str, default: float) -> float:
@@ -329,42 +406,188 @@ class SensorInterface:
         self._close_serial()
         print("[SensorInterface] Disconnected — will attempt reconnect")
 
+    # ------------------------------------------------------------------
+    # Data validation
+    # ------------------------------------------------------------------
+
+    def _is_within_bounds(
+        self,
+        sensor_type: str,
+        value: float,
+        min_val: float,
+        max_val: float,
+    ) -> bool:
+        """Check if a sensor value is within acceptable bounds."""
+        if value < min_val or value > max_val:
+            self._validation_errors[f"{sensor_type}_out_of_range"] += 1
+            print(
+                f"[SensorInterface] {sensor_type.upper()} out of range: "
+                f"{value} (bounds: {min_val}–{max_val})"
+            )
+            return False
+        return True
+
+    def _is_within_delta(
+        self,
+        sensor_type: str,
+        new_value: float,
+        previous_value: float | None,
+        max_delta: float,
+    ) -> bool:
+        """
+        Check if a sensor value represents a reasonable change from the previous value.
+
+        Args:
+            sensor_type: Name of the sensor (e.g., "temperature")
+            new_value: The incoming reading
+            previous_value: The last accepted reading (or None if first reading)
+            max_delta: Maximum allowed change. If 0, check is skipped.
+
+        Returns:
+            True if the change is acceptable or if max_delta is 0.
+        """
+        if max_delta == 0 or previous_value is None:
+            return True
+
+        delta = abs(new_value - previous_value)
+        if delta > max_delta:
+            self._validation_errors[f"{sensor_type}_delta_exceeded"] += 1
+            print(
+                f"[SensorInterface] {sensor_type.upper()} change exceeds threshold: "
+                f"{previous_value} → {new_value} (delta: {delta}, "
+                f"max allowed: {max_delta})"
+            )
+            return False
+        return True
+
+    def _validate_temperature(self, value: float) -> bool:
+        """Validate a temperature reading. Returns True if acceptable."""
+        if not self._is_within_bounds("temperature", value, self._temp_min, self._temp_max):
+            return False
+        if not self._is_within_delta(
+            "temperature",
+            value,
+            self._temperature if self._has_temperature else None,
+            self._temp_max_delta,
+        ):
+            return False
+        return True
+
+    def _validate_humidity(self, value: float) -> bool:
+        """Validate a humidity reading. Returns True if acceptable."""
+        if not self._is_within_bounds("humidity", value, self._hum_min, self._hum_max):
+            return False
+        if not self._is_within_delta(
+            "humidity",
+            value,
+            self._humidity if self._has_humidity else None,
+            self._hum_max_delta,
+        ):
+            return False
+        return True
+
+    def _validate_pressure(self, value: float) -> bool:
+        """Validate a pressure reading. Returns True if acceptable."""
+        if not self._is_within_bounds("pressure", value, self._pres_min, self._pres_max):
+            return False
+        if not self._is_within_delta(
+            "pressure", value, self._pressure, self._pres_max_delta
+        ):
+            return False
+        return True
+
+    def _validate_altitude(self, value: float) -> bool:
+        """Validate an altitude reading. Returns True if acceptable."""
+        if not self._is_within_bounds("altitude", value, self._alt_min, self._alt_max):
+            return False
+        if not self._is_within_delta(
+            "altitude", value, self._altitude, self._alt_max_delta
+        ):
+            return False
+        return True
+
+    def _validate_mq(self, value: float) -> bool:
+        """Validate an MQ sensor reading. Returns True if acceptable."""
+        if not self._is_within_bounds("mq", value, self._mq_min, self._mq_max):
+            return False
+        return True
+
     def _parse_line(self, line: str) -> None:
         """
         Parse one line of serial output from main.cpp and update local state.
+        Invalid readings are logged but not stored, allowing the connection
+        to remain stable while data quality is monitored.
 
         Args:
             line: Decoded text line from the serial stream.
         """
         with self._lock:
             if m := self._PATTERNS["temperature"].match(line):
-                self._temperature = float(m.group(1))
-                self._has_temperature = True
-                self._last_data_received = time.time()
+                try:
+                    value = float(m.group(1))
+                    if self._validate_temperature(value):
+                        self._temperature = value
+                        self._has_temperature = True
+                        self._last_data_received = time.time()
+                    # else: rejected by validation, don't update _temperature
+                except (ValueError, TypeError):
+                    self._validation_errors["temperature_out_of_range"] += 1
+                    print(f"[SensorInterface] Failed to parse temperature value: {m.group(1)}")
+
             elif m := self._PATTERNS["humidity"].match(line):
-                self._humidity = float(m.group(1))
-                self._has_humidity = True
-                self._last_data_received = time.time()
+                try:
+                    value = float(m.group(1))
+                    if self._validate_humidity(value):
+                        self._humidity = value
+                        self._has_humidity = True
+                        self._last_data_received = time.time()
+                except (ValueError, TypeError):
+                    self._validation_errors["humidity_out_of_range"] += 1
+                    print(f"[SensorInterface] Failed to parse humidity value: {m.group(1)}")
+
             elif m := self._PATTERNS["pressure"].match(line):
-                self._pressure = float(m.group(1))
-                self._last_data_received = time.time()
+                try:
+                    value = float(m.group(1))
+                    if self._validate_pressure(value):
+                        self._pressure = value
+                        self._last_data_received = time.time()
+                except (ValueError, TypeError):
+                    self._validation_errors["pressure_out_of_range"] += 1
+                    print(f"[SensorInterface] Failed to parse pressure value: {m.group(1)}")
+
             elif m := self._PATTERNS["altitude"].match(line):
-                self._altitude = float(m.group(1))
-                self._last_data_received = time.time()
+                try:
+                    value = float(m.group(1))
+                    if self._validate_altitude(value):
+                        self._altitude = value
+                        self._last_data_received = time.time()
+                except (ValueError, TypeError):
+                    self._validation_errors["altitude_out_of_range"] += 1
+                    print(f"[SensorInterface] Failed to parse altitude value: {m.group(1)}")
+
             elif m := self._PATTERNS["mq"].match(line):
-                sensor_id = int(m.group(1))
-                value = int(m.group(2))
-                self._mq_raw_readings[sensor_id] = value
-                previous = self._mq_readings.get(sensor_id)
-                if previous is None:
-                    filtered = value
-                else:
-                    filtered = round(
-                        self._MQ_EMA_ALPHA * value +
-                        (1 - self._MQ_EMA_ALPHA) * previous
+                try:
+                    sensor_id = int(m.group(1))
+                    value = int(m.group(2))
+                    if self._validate_mq(value):
+                        self._mq_raw_readings[sensor_id] = value
+                        previous = self._mq_readings.get(sensor_id)
+                        if previous is None:
+                            filtered = value
+                        else:
+                            filtered = round(
+                                self._MQ_EMA_ALPHA * value +
+                                (1 - self._MQ_EMA_ALPHA) * previous
+                            )
+                        self._mq_readings[sensor_id] = filtered
+                        self._last_data_received = time.time()
+                    # else: rejected by validation, don't update MQ reading
+                except (ValueError, TypeError):
+                    self._validation_errors["mq_out_of_range"] += 1
+                    print(
+                        f"[SensorInterface] Failed to parse MQ sensor {m.group(1)}: "
+                        f"value={m.group(2)}"
                     )
-                self._mq_readings[sensor_id] = filtered
-                self._last_data_received = time.time()
 
     # ------------------------------------------------------------------
     # Public accessors
@@ -417,6 +640,22 @@ class SensorInterface:
         """Returns True once live temperature and humidity readings were received."""
         with self._lock:
             return self.is_connected() and self._has_temperature and self._has_humidity
+
+    def get_validation_errors(self) -> dict[str, int]:
+        """
+        Returns a dictionary of validation error counts accumulated since
+        connection or since the last reset. Useful for monitoring data quality.
+
+        Returns:
+            A dict with keys like "temperature_out_of_range", "humidity_delta_exceeded", etc.
+        """
+        with self._lock:
+            return self._validation_errors.copy()
+
+    def reset_validation_errors(self) -> None:
+        """Reset all validation error counters to zero."""
+        with self._lock:
+            self._validation_errors = {key: 0 for key in self._validation_errors.keys()}
 
 
 # ------------------------------------------------------------------
