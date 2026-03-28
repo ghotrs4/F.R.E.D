@@ -3,6 +3,7 @@
 #include <Adafruit_BME280.h>
 #include <Wire.h>
 #include "BluetoothSerial.h"
+#include "BLEDevice.h"
 #include <stdlib.h>
 
 #define ANALOG_MULTIPLEXER_S0  (uint8_t)32
@@ -55,6 +56,8 @@ void printBMEValues(void);
 void initSerial(void);
 
 void setup(void) {
+  //set power level of Bluetooth transmission for maximum range
+  esp_bredr_tx_power_set(ESP_PWR_LVL_P9, ESP_PWR_LVL_P9);
   //init status LEDs
   pinMode(STATUS_LED, OUTPUT);
   pinMode(ONBOARD_LED, OUTPUT);
