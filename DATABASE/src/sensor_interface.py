@@ -31,7 +31,7 @@ class SensorInterface:
         "humidity":    re.compile(r">Humidity:([\d.]+)"),
     }
 
-    def __init__(self, port: str | None = None, baudrate: int = 115200):
+    def __init__(self, port: str | None = None, baudrate: int = 57600):
         """
         Initialize sensor interface.
 
@@ -42,11 +42,19 @@ class SensorInterface:
                       kept for compatibility when switching to wired UART.
         """
         env_port = os.environ.get("SENSOR_PORT")
-        self._preferred_port = env_port if env_port else port
+        if env_port:
+            self._preferred_port = env_port
+        elif port:
+            self._preferred_port = port
+        elif os.name == "posix":
+            # Match the tested standalone script's default Linux RFCOMM device.
+            self._preferred_port = "/dev/rfcomm0"
+        else:
+            self._preferred_port = None
         self._baudrate = baudrate
         self._is_connected = False
         self._serial: serial.Serial | None = None
-        self._serial_timeout = max(0.05, self._env_float('SENSOR_SERIAL_TIMEOUT', 10.0))
+        self._serial_timeout = max(0.05, self._env_float('SENSOR_SERIAL_TIMEOUT', 5.0))
         self._stale_timeout = max(2.0, self._env_float('SENSOR_STALE_TIMEOUT', self._STALE_TIMEOUT))
         self._max_consecutive_serial_errors = max(
             1,
@@ -137,9 +145,8 @@ class SensorInterface:
     # BT serial buffer bytes before the probe read loop starts, so the first
     # matching line is guaranteed to be a live transmission.
     _PORT_PROBE_MIN_LINES: int = 1
-    # Exponential moving average smoothing factor for MQ sensors.
-    # Lower values reduce noise more aggressively, higher values react faster.
-    _MQ_EMA_ALPHA: float = 0.2
+    # Keep MQ readings raw to mirror the standalone serial reference reader.
+    _MQ_EMA_ALPHA: float = 1.0
 
     # ================================================================
     # Data validation constants (configurable via environment variables)
@@ -151,7 +158,7 @@ class SensorInterface:
     # Maximum temperature change allowed between consecutive readings (°C).
     # Prevents accepting a reading if it diverges by more than this from
     # the previous value. Use 0 to disable. Configurable via SENSOR_TEMP_MAX_DELTA.
-    _TEMP_MAX_DELTA: float = 15.0
+    _TEMP_MAX_DELTA: float = 30.0
 
     # Humidity bounds (%). Standard: 0 to 100.
     # Configurable via SENSOR_HUM_MIN and SENSOR_HUM_MAX env vars.
@@ -270,11 +277,8 @@ class SensorInterface:
         available = [p.device for p in serial.tools.list_ports.comports()]
         if not self._preferred_port:
             return available
-        if self._preferred_port in available:
-            available.remove(self._preferred_port)
-            return [self._preferred_port] + available
-        # Preferred not yet listed (e.g. BT pairing still in progress) — try anyway
-        return [self._preferred_port] + available
+        # Keep behavior simple and deterministic: only use explicit preferred port.
+        return [self._preferred_port]
 
     def _try_port(self, port: str) -> bool:
         """
@@ -286,7 +290,13 @@ class SensorInterface:
         returns False.
         """
         try:
-            ser = serial.Serial(port, self._baudrate, timeout=self._serial_timeout)
+            ser = serial.Serial(
+                port=port,
+                baudrate=self._baudrate,
+                bytesize=serial.EIGHTBITS,
+                timeout=self._serial_timeout,
+                stopbits=serial.STOPBITS_ONE,
+            )
         except (serial.SerialException, OSError, PermissionError):
             return False
 
@@ -302,16 +312,6 @@ class SensorInterface:
                     pass
                 return False
             time.sleep(0.1)
-
-        # Flush any bytes that accumulated in the input buffer during the settle
-        # delay.  Those bytes are stale BT serial buffer data from before this
-        # connection was opened.  Counting them as "valid lines" would cause a
-        # false-positive probe on a dead link — the first _read_line() would then
-        # immediately raise a SerialException and trigger a re-sweep.
-        try:
-            ser.reset_input_buffer()
-        except Exception:
-            pass
 
         deadline = time.time() + self._PORT_PROBE_TIMEOUT
         valid_lines: list[str] = []
@@ -380,7 +380,7 @@ class SensorInterface:
         try:
             raw = ser.readline()
             if not raw:
-                # readline() timed out (1 s configured on port open)
+                # readline() timed out according to self._serial_timeout.
                 if (self._last_data_received > 0 and
                         time.time() - self._last_data_received > self._stale_timeout):
                     print(f"[SensorInterface] No data for {self._stale_timeout}s "
@@ -394,22 +394,23 @@ class SensorInterface:
         except (serial.SerialException, OSError, PermissionError) as e:
             if self._is_transient_empty_read_error(e):
                 self._transient_empty_read_errors += 1
-                if self._transient_empty_read_errors < self._max_transient_empty_read_errors:
+                if self._transient_empty_read_errors == 1 or self._transient_empty_read_errors % 25 == 0:
                     print(
                         f"[SensorInterface] Transient serial empty-read "
-                        f"({self._transient_empty_read_errors}/"
-                        f"{self._max_transient_empty_read_errors}): {e}"
+                        f"({self._transient_empty_read_errors}): {e}"
                     )
-                    try:
-                        ser.reset_input_buffer()
-                    except Exception:
-                        pass
-                    time.sleep(min(self._serial_timeout, 0.5))
+                if self._transient_empty_read_errors >= self._max_transient_empty_read_errors:
+                    print(
+                        "[SensorInterface] Transient empty-read threshold "
+                        f"reached ({self._transient_empty_read_errors}/"
+                        f"{self._max_transient_empty_read_errors}) — reconnecting"
+                    )
+                    self._mark_disconnected()
                     return
-                print(
-                    f"[SensorInterface] Serial empty-read persisted for "
-                    f"{self._transient_empty_read_errors} attempts: {e}"
-                )
+                # Treat known RFCOMM empty-read exceptions as non-fatal; rely on
+                # stale-timeout logic to detect a real dead connection.
+                time.sleep(min(self._serial_timeout, 0.2))
+                return
 
             self._consecutive_serial_errors += 1
             if self._consecutive_serial_errors < self._max_consecutive_serial_errors:
@@ -544,7 +545,11 @@ class SensorInterface:
 
     def _validate_mq(self, value: float) -> bool:
         """Validate an MQ sensor reading. Returns True if acceptable."""
-        if not self._is_within_bounds("mq", value, self._mq_min, self._mq_max):
+        # Do not reject MQ readings in the live stream path; transient spikes
+        # are still useful telemetry and the reference serial script keeps all
+        # values. Bound checks can still be done by downstream analytics.
+        if value < 0:
+            self._validation_errors["mq_out_of_range"] += 1
             return False
         return True
 
@@ -607,15 +612,7 @@ class SensorInterface:
                     value = int(m.group(2))
                     if self._validate_mq(value):
                         self._mq_raw_readings[sensor_id] = value
-                        previous = self._mq_readings.get(sensor_id)
-                        if previous is None:
-                            filtered = value
-                        else:
-                            filtered = round(
-                                self._MQ_EMA_ALPHA * value +
-                                (1 - self._MQ_EMA_ALPHA) * previous
-                            )
-                        self._mq_readings[sensor_id] = filtered
+                        self._mq_readings[sensor_id] = value
                         self._last_data_received = time.time()
                     # else: rejected by validation, don't update MQ reading
                 except (ValueError, TypeError):

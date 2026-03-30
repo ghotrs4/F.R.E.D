@@ -25,6 +25,7 @@ const classifyingCount = ref(0)
 const isFullscreen = ref(false)
 const shouldRestoreFullscreen = ref(false)
 const geminiEnabled = ref(true)
+const useLocalCamera = ref(false)
 const classificationAnimRef = ref(null)
 const classificationAnimInstance = shallowRef(null)
 const imageBlobCache = ref({})    // food name (lowercase) -> Blob, for in-session compare
@@ -33,6 +34,7 @@ const outgoingItems = ref([])
 
 const FULLSCREEN_PREF_KEY = 'fred_fullscreen_enabled'
 const GEMINI_ENABLED_PREF_KEY = 'fred_gemini_enabled'
+const USE_LOCAL_CAMERA_PREF_KEY = 'fred_use_local_camera'
 
 const persistFullscreenPreference = (enabled) => {
   try {
@@ -57,10 +59,26 @@ const loadGeminiPreference = () => {
   }
 }
 
+const loadLocalCameraPreference = () => {
+  try {
+    const stored = localStorage.getItem(USE_LOCAL_CAMERA_PREF_KEY)
+    return stored === null ? false : stored === 'true'
+  } catch {
+    return false
+  }
+}
+
 const setGeminiEnabled = (enabled) => {
   geminiEnabled.value = Boolean(enabled)
   try {
     localStorage.setItem(GEMINI_ENABLED_PREF_KEY, geminiEnabled.value ? 'true' : 'false')
+  } catch {}
+}
+
+const setUseLocalCamera = (enabled) => {
+  useLocalCamera.value = Boolean(enabled)
+  try {
+    localStorage.setItem(USE_LOCAL_CAMERA_PREF_KEY, useLocalCamera.value ? 'true' : 'false')
   } catch {}
 }
 
@@ -262,7 +280,7 @@ const handleFinishScanning = async (items) => {
   showCameraPopup.value = false
   
   if (items.length === 0) {
-    alert('No predictions were returned. Check browser DevTools Network for /api/classify-food/batch and backend logs for Gemini/API errors.')
+    console.warn('[scan] No predictions returned from batch endpoint.')
     return
   }
   
@@ -681,6 +699,7 @@ onMounted(() => {
   loadPendingItems()
   loadOutgoingItems()
   geminiEnabled.value = loadGeminiPreference()
+  useLocalCamera.value = loadLocalCameraPreference()
 
   const wantsFullscreen = loadFullscreenPreference()
   isFullscreen.value = Boolean(document.fullscreenElement)
@@ -703,7 +722,12 @@ onUnmounted(() => {
 
 <template>
   <SidebarProvider class="sidebar-provider">
-    <AppSidebar :gemini-enabled="geminiEnabled" @toggle-gemini="setGeminiEnabled" />
+    <AppSidebar
+      :use-local-camera="useLocalCamera"
+      :gemini-enabled="geminiEnabled"
+      @toggle-local-camera="setUseLocalCamera"
+      @toggle-gemini="setGeminiEnabled"
+    />
     <div class="content-wrapper">
       <SidebarTrigger class="sidebar-trigger" />
       
@@ -794,6 +818,7 @@ onUnmounted(() => {
     <CameraCapture 
       v-if="showCameraPopup"
       :gemini-enabled="geminiEnabled"
+      :use-local-camera="useLocalCamera"
       @close="closeCameraPopup"
       @finish="handleFinishScanning"
       @classifying="handleClassifying"

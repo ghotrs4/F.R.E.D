@@ -26,6 +26,13 @@ def _load_mq_sensor_config():
 
 MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET = _load_mq_sensor_config()
 
+
+def refresh_mq_sensor_config():
+    """Reload MQ calibration ranges from JSON at runtime."""
+    global MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET
+    MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET = _load_mq_sensor_config()
+    return MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET
+
 MQ_SENSOR_WEIGHTS = {
     2: 1.0,
     3: 0.9,

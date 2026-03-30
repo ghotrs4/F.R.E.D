@@ -153,7 +153,7 @@ const props = defineProps({
 })
 
 const viewBoxWidth = 1000
-const viewBoxHeight = 150
+const viewBoxHeight = 180
 const chartRootRef = ref(null)
 const svgRef = ref(null)
 const selectedSensorId = ref(null)
@@ -451,7 +451,7 @@ onUnmounted(() => {
   background-color: oklch(0.15 0 0);
   border-radius: 6px;
   padding: 0.75rem;
-  min-height: 120px;
+  min-height: 145px;
 }
 
 .y-axis {

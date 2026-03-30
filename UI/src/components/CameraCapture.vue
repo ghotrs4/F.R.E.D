@@ -3,7 +3,7 @@
 -->
 
 <script setup>
-import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, computed } from 'vue'
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 import { apiUrl } from '../utils/apiBase'
 
@@ -12,12 +12,18 @@ const props = defineProps({
   geminiEnabled: {
     type: Boolean,
     default: true
+  },
+  useLocalCamera: {
+    type: Boolean,
+    default: false
   }
 })
 
 const videoRef = ref(null)
+const streamImageRef = ref(null)
 const canvasRef = ref(null)
 const stream = ref(null)
+const cameraMode = computed(() => (props.useLocalCamera ? 'local' : 'pi'))
 const isCameraActive = ref(false)
 const error = ref(null)
 const model = shallowRef(null)
@@ -37,6 +43,15 @@ const showDebugOverlay = ref(false)
 const tapTimer = ref(null)
 const lastTapTimestamp = ref(0)
 const lastGestureTimestamp = ref(0)
+const piStreamNonce = ref(Date.now())
+const piDetectionCanvas = ref(null)
+const piDetectionCtx = ref(null)
+const piStreamActive = ref(false)
+
+const piStreamUrl = computed(() => {
+  if (!piStreamActive.value) return ''
+  return `${apiUrl('/api/camera/stream')}?t=${piStreamNonce.value}`
+})
 
 const DOUBLE_TAP_WINDOW_MS = 280
 const GESTURE_DEDUPE_MS = 80
@@ -106,6 +121,14 @@ const handleFrameTouchStart = (event) => {
 
 const toggleDebugOverlay = () => {
   showDebugOverlay.value = !showDebugOverlay.value
+  statusMessage.value = showDebugOverlay.value ? 'Debug overlay enabled' : ''
+  if (showDebugOverlay.value) {
+    setTimeout(() => {
+      if (statusMessage.value === 'Debug overlay enabled') {
+        statusMessage.value = ''
+      }
+    }, 1200)
+  }
   // Clear canvas immediately when turning off
   if (!showDebugOverlay.value) {
     const debugCanvas = debugCanvasRef.value
@@ -116,13 +139,28 @@ const toggleDebugOverlay = () => {
 }
 
 const startCamera = async () => {
+  error.value = null
+
+  if (cameraMode.value === 'pi') {
+    stopDetection()
+    stopLocalCamera()
+    piStreamActive.value = true
+    piStreamNonce.value = Date.now()
+    isCameraActive.value = true
+    return
+  }
+
+  await startLocalCamera()
+}
+
+const startLocalCamera = async () => {
   try {
-    stream.value = await navigator.mediaDevices.getUserMedia({ 
-      video: { 
+    stream.value = await navigator.mediaDevices.getUserMedia({
+      video: {
         facingMode: 'environment',
         width: { ideal: 1280 },
         height: { ideal: 720 }
-      } 
+      }
     })
     if (videoRef.value) {
       videoRef.value.srcObject = stream.value
@@ -135,12 +173,41 @@ const startCamera = async () => {
   }
 }
 
-const stopCamera = () => {
+const stopLocalCamera = () => {
   if (stream.value) {
     stream.value.getTracks().forEach(track => track.stop())
     stream.value = null
-    isCameraActive.value = false
   }
+  if (videoRef.value) {
+    videoRef.value.srcObject = null
+  }
+}
+
+const stopPiStream = () => {
+  piStreamActive.value = false
+  // Aggressively clear src so the browser closes the HTTP stream immediately.
+  if (streamImageRef.value) {
+    streamImageRef.value.removeAttribute('src')
+    streamImageRef.value.src = ''
+  }
+}
+
+const stopCamera = () => {
+  stopPiStream()
+  stopLocalCamera()
+  isCameraActive.value = false
+  stopDetection()
+}
+
+const onPiStreamLoaded = () => {
+  isCameraActive.value = true
+  error.value = null
+  startDetection()
+}
+
+const onPiStreamError = () => {
+  isCameraActive.value = false
+  error.value = 'Failed to load Raspberry Pi camera stream. Check backend proxy and Pi stream service.'
   stopDetection()
 }
 
@@ -173,15 +240,34 @@ const cancelCountdown = () => {
 }
 
 const captureImage = () => {
-  if (!videoRef.value || !canvasRef.value || isBatchProcessing.value) return
-  
-  const video = videoRef.value
+  if (!canvasRef.value || isBatchProcessing.value) return
+
   const canvas = canvasRef.value
   const context = canvas.getContext('2d')
-  
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  context.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  if (cameraMode.value === 'pi') {
+    const streamImage = streamImageRef.value
+    if (!streamImage || !streamImage.naturalWidth || !streamImage.naturalHeight) {
+      statusMessage.value = 'Pi stream is not ready yet. Try again in a second.'
+      setTimeout(() => {
+        if (statusMessage.value === 'Pi stream is not ready yet. Try again in a second.') {
+          statusMessage.value = ''
+        }
+      }, 1500)
+      return
+    }
+
+    canvas.width = streamImage.naturalWidth
+    canvas.height = streamImage.naturalHeight
+    context.drawImage(streamImage, 0, 0, canvas.width, canvas.height)
+  } else {
+    const video = videoRef.value
+    if (!video || !video.videoWidth || !video.videoHeight) return
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+  }
   
   canvas.toBlob((blob) => {
     if (blob) {
@@ -215,7 +301,7 @@ const finishScanning = async () => {
     capturedBlobs.value.forEach((blob, i) => {
       formData.append(`image_${i}`, blob, `capture_${i}.jpg`)
     })
-    
+
     const response = await fetch(apiUrl('/api/classify-food/batch'), {
       method: 'POST',
       body: formData
@@ -266,16 +352,46 @@ const startDetection = () => {
     console.log('Detection not started: model not loaded')
     return
   }
+
+  if (detectionInterval.value) {
+    clearInterval(detectionInterval.value)
+    detectionInterval.value = null
+  }
   
   console.log('Starting detection...')
   
   detectionInterval.value = setInterval(() => {
-    if (!videoRef.value || videoRef.value.readyState !== 4) {
+    const sourceElement = cameraMode.value === 'pi' ? streamImageRef.value : videoRef.value
+    if (!sourceElement) return
+
+    if (cameraMode.value === 'local') {
+      if (!videoRef.value || videoRef.value.readyState !== 4) return
+    } else if (!streamImageRef.value?.naturalWidth || !streamImageRef.value?.naturalHeight) {
       return
     }
     
     try {
-      const raw = model.value.detectForVideo(videoRef.value, performance.now())
+      let detectionSource = sourceElement
+      if (cameraMode.value === 'pi') {
+        const sourceWidth = streamImageRef.value.naturalWidth
+        const sourceHeight = streamImageRef.value.naturalHeight
+        if (!sourceWidth || !sourceHeight) return
+
+        if (!piDetectionCanvas.value) {
+          piDetectionCanvas.value = document.createElement('canvas')
+          piDetectionCtx.value = piDetectionCanvas.value.getContext('2d')
+        }
+        if (!piDetectionCtx.value) return
+
+        if (piDetectionCanvas.value.width !== sourceWidth || piDetectionCanvas.value.height !== sourceHeight) {
+          piDetectionCanvas.value.width = sourceWidth
+          piDetectionCanvas.value.height = sourceHeight
+        }
+        piDetectionCtx.value.drawImage(streamImageRef.value, 0, 0, sourceWidth, sourceHeight)
+        detectionSource = piDetectionCanvas.value
+      }
+
+      const raw = model.value.detect(detectionSource)
       // Normalise to the same {class, score, bbox:[x,y,w,h]} shape used downstream
       const predictions = raw.detections.map(d => ({
         class: d.categories[0]?.categoryName ?? '',
@@ -288,18 +404,24 @@ const startDetection = () => {
         ]
       }))
       
-      // Get video dimensions
-      const videoWidth = videoRef.value.videoWidth
-      const videoHeight = videoRef.value.videoHeight
+      // Get source dimensions
+      const sourceWidth = cameraMode.value === 'pi'
+        ? streamImageRef.value.naturalWidth
+        : videoRef.value.videoWidth
+      const sourceHeight = cameraMode.value === 'pi'
+        ? streamImageRef.value.naturalHeight
+        : videoRef.value.videoHeight
       
       // Calculate guide box boundaries in video coordinates
       // Guide box is 300x300px centered on the display, but we need to map to actual video size
-      const displayWidth = videoRef.value.clientWidth
-      const displayHeight = videoRef.value.clientHeight
+      const displayWidth = sourceElement.clientWidth
+      const displayHeight = sourceElement.clientHeight
+
+      if (!displayWidth || !displayHeight || !sourceWidth || !sourceHeight) return
       
       // Scale factor from display to video
-      const scaleX = videoWidth / displayWidth
-      const scaleY = videoHeight / displayHeight
+      const scaleX = sourceWidth / displayWidth
+      const scaleY = sourceHeight / displayHeight
       
       // Guide box dimensions in display coordinates
       const guideBoxSize = 300
@@ -367,6 +489,17 @@ const startDetection = () => {
         const ctx = debugCanvas.getContext('2d')
         ctx.clearRect(0, 0, displayWidth, displayHeight)
         const guideBoxAreaDisplay = guideBoxSize * guideBoxSize
+
+        // Always draw debug guide and state so toggle feedback is visible
+        ctx.strokeStyle = '#22d3ee'
+        ctx.lineWidth = 2
+        ctx.setLineDash([8, 6])
+        ctx.strokeRect(guideBoxLeft, guideBoxTop, guideBoxSize, guideBoxSize)
+        ctx.setLineDash([])
+        ctx.font = 'bold 12px monospace'
+        ctx.fillStyle = '#22d3ee'
+        ctx.fillText(`DEBUG ON | source=${cameraMode.value} | detections=${predictions.length}`, 10, 18)
+
         for (const p of predictions) {
           const x = p.bbox[0] / scaleX
           const y = p.bbox[1] / scaleY
@@ -388,6 +521,11 @@ const startDetection = () => {
           ctx.fillStyle = isCentered ? '#00ff88' : '#facc15'
           const labelY = y > 18 ? y - 4 : y + h + 14
           ctx.fillText(label, x + 2, labelY)
+        }
+
+        if (!predictions.length) {
+          ctx.fillStyle = '#facc15'
+          ctx.fillText('No detections on this frame', 10, 36)
         }
       }
 
@@ -456,7 +594,7 @@ onMounted(async () => {
         delegate: 'GPU'
       },
       scoreThreshold: 0.1,
-      runningMode: 'VIDEO',
+      runningMode: 'IMAGE',
       categoryDenylist: ["person"]
     })
     isModelLoading.value = false
@@ -504,15 +642,25 @@ onUnmounted(() => {
           @mousedown.capture="handleFrameMouseDown"
           @click="handleFrameClick"
         >
-          <video 
-            ref="videoRef" 
-            autoplay 
+          <video
+            v-if="cameraMode === 'local'"
+            ref="videoRef"
+            autoplay
             playsinline
             class="camera-video"
             @pointerdown="handleFramePointerDown"
             @touchstart="handleFrameTouchStart"
             @mousedown="handleFrameMouseDown"
           ></video>
+          <img
+            v-else
+            ref="streamImageRef"
+            :src="piStreamUrl"
+            alt="Raspberry Pi stream"
+            class="camera-video"
+            @load="onPiStreamLoaded"
+            @error="onPiStreamError"
+          />
           <canvas ref="canvasRef" style="display: none;"></canvas>
           <canvas ref="debugCanvasRef" class="debug-overlay"></canvas>
           
@@ -525,7 +673,7 @@ onUnmounted(() => {
             <p v-if="isBatchProcessing" class="status-message">Classifying {{ capturedBlobs.length }} item(s)...</p>
             <p v-else-if="statusMessage" class="status-message">{{ statusMessage }}</p>
             <p v-else-if="isCapturing">Capturing...</p>
-            <p v-else>{{ objectDetected ? 'Object detected!' : 'Position food item in the frame' }}</p>
+            <p v-else>Position food item in the frame</p>
             <p v-if="capturedBlobs.length > 0 && !isBatchProcessing" class="items-count">{{ capturedBlobs.length }} item(s) captured</p>
           </div>
         </div>
@@ -609,9 +757,12 @@ onUnmounted(() => {
   padding: 1.5rem;
   overflow: auto;
   display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   justify-content: center;
   align-items: center;
 }
+
 
 .camera-loading {
   display: flex;

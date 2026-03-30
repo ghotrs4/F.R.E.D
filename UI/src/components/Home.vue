@@ -389,7 +389,7 @@ onMounted(async () => {
     ])
     mqHistory.value = history
     gasContributorState.value = gasContributors
-  }, 5000)
+  }, 1000)
 })
 
 onUnmounted(() => {
@@ -698,12 +698,15 @@ onUnmounted(() => {
 }
 
 .welcome {
-  font-size: clamp(1.5rem, 5vw, 3rem);
+  font-size: clamp(1.5rem, 5vw, 3.5rem);
+  font-weight: 600;
+  color: #86b5ca;
 }
 
 .subtitle {
   color: #888;
   font-size: clamp(0.875rem, 2vw, 1.25rem);
+  margin-top: 0.5rem;
 }
 
 /* Alerts Section Styles */

@@ -131,7 +131,7 @@ onMounted(async () => {
   // Fetch initial temperature history
   temperatureHistory.value = await getTemperatureHistory()
   
-  // Poll for sensor data updates every 5 seconds
+  // Poll for sensor data updates every 0.5 seconds
   sensorUpdateInterval = setInterval(async () => {
     const sensorData = await getSensorData()
     temperature.value = sensorData.temperature
@@ -152,18 +152,18 @@ onMounted(async () => {
     wasteHistory.value = await getWasteHistory()
   }, 30000)
   
-  // Poll for temperature history updates every 5 seconds
+  // Poll for temperature history updates every 0.5 seconds
   temperatureUpdateInterval = setInterval(async () => {
     temperatureHistory.value = await getTemperatureHistory()
-  }, 5000)
+  }, 500)
 
   // Fetch initial MQ history
   mqHistory.value = await getMqHistory()
 
-  // Poll for MQ history updates every 5 seconds
+  // Poll for MQ history updates every 0.5 seconds
   mqUpdateInterval = setInterval(async () => {
     mqHistory.value = await getMqHistory()
-  }, 5000)
+  }, 500)
 })
 
 onUnmounted(() => {

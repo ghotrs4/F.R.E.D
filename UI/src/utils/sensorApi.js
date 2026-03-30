@@ -25,3 +25,24 @@ export async function getSensorData() {
     }
   }
 }
+
+/**
+ * Calibrate MQ sensor max values to current live readings.
+ * @returns {Promise<{message: string, updatedMaxValues: Record<number, number>}>}
+ */
+export async function calibrateMqSensors() {
+  const response = await fetch(`${API_BASE_URL}/sensor/mq/calibrate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const errorMessage = payload?.error || `HTTP error! status: ${response.status}`
+    throw new Error(errorMessage)
+  }
+
+  return payload
+}

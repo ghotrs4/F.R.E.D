@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 import csv
 import os
@@ -7,13 +7,19 @@ import requests
 import json
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from spoilage_algorithm import predict_spoilage, predict_gas_contributors, MQ_HIGH_THRESHOLD_OFFSET
+from spoilage_algorithm import (
+    predict_spoilage,
+    predict_gas_contributors,
+    MQ_HIGH_THRESHOLD_OFFSET,
+    refresh_mq_sensor_config,
+)
 from sensor_interface import get_sensor
 import google.genai as genai
 from google.genai import types
 from PIL import Image
 import sys
 import threading
+import time
 
 # Make the IMAGE_CLASS module importable regardless of cwd
 _IMAGE_CLASS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'IMAGE_CLASS')
@@ -40,6 +46,15 @@ SPOONACULAR_API_KEY = os.environ.get('SPOONACULAR_API_KEY')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
+PI_CAMERA_STREAM_URL = os.environ.get('PI_CAMERA_STREAM_URL', 'http://raspberrypi.local:8081/stream')
+PI_CAMERA_SNAPSHOT_URL = os.environ.get('PI_CAMERA_SNAPSHOT_URL', 'http://raspberrypi.local:8081/snapshot')
+
+
+def _is_http_camera_url(url: str) -> bool:
+    if not url:
+        return False
+    return url.startswith('http://') or url.startswith('https://')
+
 
 def _get_timeout_seconds(env_name, default_seconds):
     raw_value = os.environ.get(env_name)
@@ -51,7 +66,7 @@ def _get_timeout_seconds(env_name, default_seconds):
         return default_seconds
 
 
-_GEMINI_REQUEST_TIMEOUT_SECONDS = _get_timeout_seconds('GEMINI_REQUEST_TIMEOUT_SECONDS', 4.0)
+_GEMINI_REQUEST_TIMEOUT_SECONDS = _get_timeout_seconds('GEMINI_REQUEST_TIMEOUT_SECONDS', 10.0)
 
 
 def _run_with_timeout(func, timeout_seconds):
@@ -140,7 +155,7 @@ def _request_gemini_enabled(default=True):
     return default
 
 
-def _attach_grounded_spoilage_params(results, allow_gemini_lookup=True):
+def _attach_grounded_spoilage_params(results, allow_gemini_lookup=True, timeout_seconds=None):
     """Populate spoilage_parameters from grounded cache/API for detected foods."""
     detected_foods = [
         {
@@ -154,7 +169,11 @@ def _attach_grounded_spoilage_params(results, allow_gemini_lookup=True):
     if not detected_foods:
         return
 
-    grounded_params = get_grounded_spoilage_params(detected_foods) if allow_gemini_lookup else {}
+    grounded_params = get_grounded_spoilage_params(
+        detected_foods,
+        allow_gemini_lookup=allow_gemini_lookup,
+        timeout_seconds=timeout_seconds,
+    )
     param_keys = [
         'shelf_life_days', 'optimal_temp', 'temp_sensitivity',
         'temp_abuse_threshold', 'optimal_humidity', 'humidity_sensitivity', 'optimal_packaging'
@@ -196,7 +215,7 @@ def _cache_key(item: dict) -> str:
 
 _load_shelf_life_cache()
 
-def get_grounded_spoilage_params(food_items):
+def get_grounded_spoilage_params(food_items, allow_gemini_lookup=True, timeout_seconds=None):
     """
     Return shelf life parameters for a list of food items.
     Results are cached to disk — Gemini is only called for items not yet in the cache.
@@ -217,7 +236,11 @@ def get_grounded_spoilage_params(food_items):
         else:
             uncached.append(item)
 
-    if not uncached or not gemini_client:
+    if not uncached or not gemini_client or not allow_gemini_lookup:
+        return results
+
+    timeout_budget = _GEMINI_REQUEST_TIMEOUT_SECONDS if timeout_seconds is None else max(0.0, float(timeout_seconds))
+    if timeout_budget <= 0.0:
         return results
 
     food_list = '\n'.join([
@@ -257,7 +280,7 @@ Return ONLY a JSON array with exactly {len(uncached)} objects, one per food in t
                 )
             )
             ,
-            _GEMINI_REQUEST_TIMEOUT_SECONDS
+            timeout_budget
         )
         params_list = json.loads(response.text)
         # Use positional zip — the prompt guarantees same order as input.
@@ -281,6 +304,9 @@ Return ONLY a JSON array with exactly {len(uncached)} objects, one per food in t
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'database.csv')
 ENV_ALERTS_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'environment_alerts.csv')
 OUTCOME_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'item_outcomes.csv')
+MQ_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), '..', '..', 'UI', 'src', 'config', 'mqSensorConfig.json'
+)
 
 # Lock that serialises every CSV read-modify-write cycle.
 # Prevents file truncation races when multiple requests arrive simultaneously.
@@ -545,7 +571,6 @@ def _environment_monitor_tick():
 def _start_environment_monitor():
     """Start the background 60-second monitor thread."""
     def _loop():
-        import time
         while True:
             try:
                 _environment_monitor_tick()
@@ -1901,6 +1926,69 @@ def delete_pending_foods():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/camera/stream', methods=['GET'])
+def proxy_camera_stream():
+    """Proxy Raspberry Pi MJPEG stream to avoid mixed-content/CORS issues."""
+    if not _is_http_camera_url(PI_CAMERA_STREAM_URL):
+        return jsonify({'error': 'Invalid PI_CAMERA_STREAM_URL configuration'}), 500
+
+    try:
+        upstream = requests.get(
+            PI_CAMERA_STREAM_URL,
+            stream=True,
+            timeout=(5, 60),
+            headers={'Accept': 'multipart/x-mixed-replace'}
+        )
+        upstream.raise_for_status()
+    except requests.RequestException as e:
+        return jsonify({'error': f'Failed to connect to Pi camera stream: {e}'}), 502
+
+    content_type = upstream.headers.get('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+
+    def generate():
+        try:
+            for chunk in upstream.iter_content(chunk_size=4096):
+                if chunk:
+                    yield chunk
+        except GeneratorExit:
+            # Client disconnected; close upstream stream promptly.
+            return
+        except requests.RequestException as e:
+            print(f'[camera stream] upstream read error: {e}')
+        finally:
+            upstream.close()
+
+    response = Response(
+        stream_with_context(generate()),
+        mimetype=content_type,
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+        }
+    )
+    response.call_on_close(upstream.close)
+    return response
+
+
+@app.route('/api/camera/snapshot', methods=['GET'])
+def proxy_camera_snapshot():
+    """Proxy a single Pi camera frame for clients that prefer snapshots."""
+    if not _is_http_camera_url(PI_CAMERA_SNAPSHOT_URL):
+        return jsonify({'error': 'Invalid PI_CAMERA_SNAPSHOT_URL configuration'}), 500
+
+    try:
+        upstream = requests.get(PI_CAMERA_SNAPSHOT_URL, timeout=10)
+        upstream.raise_for_status()
+    except requests.RequestException as e:
+        return jsonify({'error': f'Failed to fetch Pi camera snapshot: {e}'}), 502
+
+    return Response(
+        upstream.content,
+        mimetype=upstream.headers.get('Content-Type', 'image/jpeg'),
+        headers={'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'}
+    )
+
 @app.route('/api/sensor', methods=['GET'])
 def get_sensor_data():
     """Get current sensor readings (temperature, humidity, and MQ gas sensors)"""
@@ -1928,6 +2016,83 @@ def get_sensor_data():
         'humidity': humidity,
         'connected': connected,
         'mq_readings': mq_readings
+    })
+
+
+@app.route('/api/sensor/mq/calibrate', methods=['POST'])
+def calibrate_mq_sensor_max():
+    """Calibrate each MQ sensor max value to the current live reading."""
+    sensor = get_sensor()
+    if not sensor.is_connected():
+        return jsonify({'error': 'Sensors are not connected'}), 503
+
+    try:
+        with open(MQ_CONFIG_PATH, 'r', encoding='utf-8') as config_file:
+            config = json.load(config_file)
+    except Exception as e:
+        return jsonify({'error': f'Failed to read MQ config: {e}'}), 500
+
+    safe_ranges = config.get('safeRanges')
+    if not isinstance(safe_ranges, dict) or not safe_ranges:
+        return jsonify({'error': 'Invalid MQ config format: safeRanges missing'}), 500
+
+    default_min_offset = config.get('defaultMinOffset', 100)
+    try:
+        default_min_offset = int(default_min_offset)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid MQ config format: defaultMinOffset must be numeric'}), 500
+
+    updated_max_values = {}
+    updated_min_values = {}
+    missing_readings = []
+    for sensor_id_str in safe_ranges.keys():
+        try:
+            sensor_id = int(sensor_id_str)
+        except (TypeError, ValueError):
+            return jsonify({'error': f'Invalid sensor id in config: {sensor_id_str}'}), 500
+
+        reading = sensor.get_mq_reading(sensor_id)
+        if reading is None:
+            missing_readings.append(sensor_id)
+            continue
+        current_reading = int(reading)
+        updated_min_values[sensor_id_str] = current_reading - default_min_offset
+        updated_max_values[sensor_id_str] = current_reading + default_min_offset
+
+    if missing_readings:
+        return jsonify({
+            'error': 'Missing live readings for one or more sensors',
+            'missingSensorIds': sorted(missing_readings)
+        }), 409
+
+    for sensor_id_str, calibrated_max in updated_max_values.items():
+        safe_range = safe_ranges.get(sensor_id_str)
+        if not isinstance(safe_range, dict):
+            safe_range = {}
+            safe_ranges[sensor_id_str] = safe_range
+
+        calibrated_min = updated_min_values[sensor_id_str]
+        safe_range['min'] = calibrated_min
+        safe_range['max'] = calibrated_max
+
+    try:
+        with open(MQ_CONFIG_PATH, 'w', encoding='utf-8') as config_file:
+            json.dump(config, config_file, indent=2)
+            config_file.write('\n')
+    except Exception as e:
+        return jsonify({'error': f'Failed to write MQ config: {e}'}), 500
+
+    refresh_mq_sensor_config()
+
+    return jsonify({
+        'message': 'MQ sensor calibration updated',
+        'defaultMinOffset': default_min_offset,
+        'updatedMaxValues': {
+            int(sensor_id): value for sensor_id, value in updated_max_values.items()
+        },
+        'updatedMinValues': {
+            int(sensor_id): value for sensor_id, value in updated_min_values.items()
+        }
     })
 
 @app.route('/api/stats/outcome', methods=['POST'])
@@ -2415,6 +2580,11 @@ def classify_food_batch():
             return jsonify({'error': 'No image files provided'}), 400
 
         n = len(image_files)
+        request_deadline = time.monotonic() + _GEMINI_REQUEST_TIMEOUT_SECONDS
+
+        def _remaining_budget_seconds():
+            return max(0.0, request_deadline - time.monotonic())
+
         gemini_enabled = _request_gemini_enabled(default=True)
         temp_paths = []
         pil_images = []
@@ -2491,15 +2661,21 @@ Return ONLY the JSON array, no extra text.
             # Build content list: prompt then all images. If Gemini fails, keep local-only results.
             used_gemini_indices = set()
             gemini_error_message = None
+            primary_gemini_failed = False
             if gemini_enabled and gemini_client:
                 try:
+                    remaining = _remaining_budget_seconds()
+                    if remaining <= 0.0:
+                        raise TimeoutError(
+                            f'Batch request exceeded end-to-end timeout of {_GEMINI_REQUEST_TIMEOUT_SECONDS:.1f}s before Gemini classification'
+                        )
                     content = [prompt] + pil_images
                     response = _run_with_timeout(
                         lambda: gemini_client.models.generate_content(
                             model='gemini-2.5-flash-lite',
                             contents=content
                         ),
-                        _GEMINI_REQUEST_TIMEOUT_SECONDS
+                        remaining
                     )
                     gemini_results = json.loads(_extract_json_payload(response.text))
                     if not isinstance(gemini_results, list):
@@ -2516,6 +2692,7 @@ Return ONLY the JSON array, no extra text.
                             merged.append(results[idx])
                     results = merged
                 except Exception as gemini_err:
+                    primary_gemini_failed = True
                     gemini_error_message = str(gemini_err)
                     print(f"[classify batch] Gemini failed, using local-only predictions: {gemini_err}")
             else:
@@ -2531,7 +2708,13 @@ Return ONLY the JSON array, no extra text.
                     result['prediction_source'] = 'local_fallback'
                     result['gemini_error'] = gemini_error_message or 'Gemini response missing or invalid'
 
-            _attach_grounded_spoilage_params(results, allow_gemini_lookup=gemini_enabled)
+            allow_grounded_gemini_lookup = gemini_enabled and not primary_gemini_failed
+            remaining_for_grounded = _remaining_budget_seconds()
+            _attach_grounded_spoilage_params(
+                results,
+                allow_gemini_lookup=allow_grounded_gemini_lookup,
+                timeout_seconds=remaining_for_grounded,
+            )
 
             return jsonify(results)
 
@@ -2771,4 +2954,6 @@ if __name__ == '__main__':
         os.path.join(_data_dir, 'mq_history.csv'),
         ['timestamp', 'mq2', 'mq3', 'mq4', 'mq5', 'mq8', 'mq9', 'mq135']
     )
-    app.run(debug=True, port=5000)
+    # Keep debug features enabled, but disable the reloader to avoid
+    # duplicate processes competing for the RFCOMM device.
+    app.run(debug=True, use_reloader=False, port=5000)
