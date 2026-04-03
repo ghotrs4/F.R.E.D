@@ -138,5 +138,55 @@
     "optimal_humidity": null,
     "humidity_sensitivity": null,
     "optimal_packaging": "loose"
+  },
+  "carrot|other|sealed": {
+    "food_name": "Carrot (category: other, packaging: sealed)",
+    "shelf_life_days": 21,
+    "optimal_temp": 0.5,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 5.0,
+    "optimal_humidity": 95,
+    "humidity_sensitivity": 1.5,
+    "optimal_packaging": "sealed"
+  },
+  "coconut milk|other|canned": {
+    "food_name": "coconut milk (category: other, packaging: canned)",
+    "shelf_life_days": 5,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 3.0,
+    "optimal_humidity": 75,
+    "humidity_sensitivity": 0.5,
+    "optimal_packaging": "sealed"
+  },
+  "banana|produce|loose": {
+    "food_name": "banana",
+    "shelf_life_days": 5,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 4.0,
+    "optimal_humidity": 90,
+    "humidity_sensitivity": 0.8,
+    "optimal_packaging": "loose"
+  },
+  "dijon mustard|condiment|bottled": {
+    "food_name": "dijon mustard",
+    "shelf_life_days": 365,
+    "optimal_temp": 4.0,
+    "temp_sensitivity": 0.7,
+    "temp_abuse_threshold": 24.0,
+    "optimal_humidity": 60,
+    "humidity_sensitivity": 0.2,
+    "optimal_packaging": "bottled"
+  },
+  "foie gras|other|sealed": {
+    "food_name": "foie gras (category: other, packaging: sealed)",
+    "shelf_life_days": 10,
+    "optimal_temp": 2.0,
+    "temp_sensitivity": 1.5,
+    "temp_abuse_threshold": 2.0,
+    "optimal_humidity": 85,
+    "humidity_sensitivity": 0.5,
+    "optimal_packaging": "sealed"
   }
 }

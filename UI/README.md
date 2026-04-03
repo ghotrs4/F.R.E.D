@@ -32,6 +32,18 @@ npm run dev
 
 Vite will print the local URL (usually `https://localhost:5173`).
 
+## Developer Settings Password
+The sidebar developer settings (local camera toggle, Gemini toggle, and MQ calibration button) can be password-protected.
+
+Set a Vite env variable before running the frontend:
+
+```bash
+export VITE_DEV_SETTINGS_PASSWORD="your-strong-password"
+npm run dev
+```
+
+If this variable is not set, the frontend falls back to `fred-dev`.
+
 ## Build for Production
 ```bash
 npm run build

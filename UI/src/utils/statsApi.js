@@ -51,12 +51,17 @@ export async function getWasteHistory() {
 }
 
 /**
- * Get temperature history for the last 12 hours
+ * Get temperature history
+ * @param {{scope?: 'recent'|'long', limit?: number}} [options]
  * @returns {Promise<Array>} Array of temperature readings with timestamps
  */
-export async function getTemperatureHistory() {
+export async function getTemperatureHistory(options = {}) {
   try {
-    const response = await fetch(`${API_BASE_URL}/stats/temperature`)
+    const params = new URLSearchParams()
+    if (options.scope) params.set('scope', options.scope)
+    if (Number.isFinite(options.limit)) params.set('limit', String(Math.max(1, Math.floor(options.limit))))
+    const query = params.toString()
+    const response = await fetch(`${API_BASE_URL}/stats/temperature${query ? `?${query}` : ''}`)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
@@ -68,12 +73,17 @@ export async function getTemperatureHistory() {
 }
 
 /**
- * Get MQ gas sensor history for the last 12 hours
+ * Get MQ gas sensor history
+ * @param {{scope?: 'recent'|'long', limit?: number}} [options]
  * @returns {Promise<Array>} Array of MQ sensor readings with timestamps
  */
-export async function getMqHistory() {
+export async function getMqHistory(options = {}) {
   try {
-    const response = await fetch(`${API_BASE_URL}/stats/mq`)
+    const params = new URLSearchParams()
+    if (options.scope) params.set('scope', options.scope)
+    if (Number.isFinite(options.limit)) params.set('limit', String(Math.max(1, Math.floor(options.limit))))
+    const query = params.toString()
+    const response = await fetch(`${API_BASE_URL}/stats/mq${query ? `?${query}` : ''}`)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }

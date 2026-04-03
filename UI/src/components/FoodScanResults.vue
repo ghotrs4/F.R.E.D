@@ -697,6 +697,12 @@ const removeItem = () => {
   gap: 16px;
 }
 
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .button-group {
   display: flex;
   gap: 16px;
@@ -799,6 +805,12 @@ const removeItem = () => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .compare-col {

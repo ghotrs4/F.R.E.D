@@ -304,13 +304,26 @@ Return ONLY a JSON array with exactly {len(uncached)} objects, one per food in t
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'database.csv')
 ENV_ALERTS_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'environment_alerts.csv')
 OUTCOME_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'item_outcomes.csv')
+TEMP_RECENT_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'temperature_recent.csv')
+MQ_RECENT_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'mq_recent.csv')
+TEMP_HISTORY_12H_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'temperature_history.csv')
+MQ_HISTORY_12H_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'mq_history.csv')
 MQ_CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), '..', '..', 'UI', 'src', 'config', 'mqSensorConfig.json'
 )
 
+_RECENT_SAMPLE_LIMIT = 60
+_RECENT_TO_LONG_ROLLUP_SECONDS = 60
+_LONG_HISTORY_HOURS = 12
+_SAMPLER_INTERVAL_SECONDS = 1
+
+_MQ_SENSOR_IDS = [2, 3, 4, 5, 8, 9, 135]
+
 # Lock that serialises every CSV read-modify-write cycle.
 # Prevents file truncation races when multiple requests arrive simultaneously.
 _csv_lock = threading.Lock()
+_history_lock = threading.Lock()
+_last_history_rollup_at: datetime | None = None
 
 _OUTCOME_FIELDNAMES = [
     'item_id',
@@ -798,50 +811,176 @@ def _trim_history_file(filepath: str, fieldnames: list):
         print(f'Error trimming history file {filepath}: {e}')
 
 
-def log_temperature_reading(temperature, humidity):
-    """Log temperature and humidity reading with timestamp"""
-    try:
-        temp_history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'temperature_history.csv')
-        fieldnames = ['timestamp', 'temperature', 'humidity']
-        timestamp = datetime.now().isoformat()
-
-        # Append new row
-        write_header = not os.path.exists(temp_history_path)
-        with open(temp_history_path, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            if write_header:
+def _ensure_history_files():
+    """Create history files with headers if they do not exist yet."""
+    files = [
+        (TEMP_RECENT_PATH, ['timestamp', 'temperature', 'humidity']),
+        (MQ_RECENT_PATH, ['timestamp', 'mq2', 'mq3', 'mq4', 'mq5', 'mq8', 'mq9', 'mq135']),
+        (TEMP_HISTORY_12H_PATH, ['timestamp', 'temperature', 'humidity']),
+        (MQ_HISTORY_12H_PATH, ['timestamp', 'mq2', 'mq3', 'mq4', 'mq5', 'mq8', 'mq9', 'mq135']),
+    ]
+    for path, fieldnames in files:
+        if os.path.exists(path):
+            continue
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
-            writer.writerow({'timestamp': timestamp, 'temperature': round(temperature, 2), 'humidity': round(humidity, 2)})
+        except Exception as e:
+            print(f'Error initializing history file {path}: {e}')
 
-        # Remove rows older than 12 hours
-        _trim_history_file(temp_history_path, fieldnames)
+
+def _read_csv_rows(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, 'r', newline='', encoding='utf-8') as f:
+        return list(csv.DictReader(f))
+
+
+def _append_recent_row(path, fieldnames, row):
+    """Append a row to a recent-history file and keep only the newest samples."""
+    with _history_lock:
+        rows = []
+        if os.path.exists(path):
+            rows = _read_csv_rows(path)
+        rows.append(row)
+        rows = rows[-_RECENT_SAMPLE_LIMIT:]
+        with open(path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def _safe_float(value):
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _rollup_recent_histories():
+    """Roll up last 60 one-second samples into one per-minute average for 12-hour history."""
+    temp_fields = ['timestamp', 'temperature', 'humidity']
+    mq_fields = ['timestamp', 'mq2', 'mq3', 'mq4', 'mq5', 'mq8', 'mq9', 'mq135']
+    timestamp = datetime.now().isoformat()
+
+    try:
+        with _history_lock:
+            temp_recent_rows = _read_csv_rows(TEMP_RECENT_PATH)
+            mq_recent_rows = _read_csv_rows(MQ_RECENT_PATH)
+
+            if temp_recent_rows:
+                temp_vals = [_safe_float(r.get('temperature')) for r in temp_recent_rows]
+                humidity_vals = [_safe_float(r.get('humidity')) for r in temp_recent_rows]
+                temp_vals = [v for v in temp_vals if v is not None]
+                humidity_vals = [v for v in humidity_vals if v is not None]
+                if temp_vals and humidity_vals:
+                    with open(TEMP_HISTORY_12H_PATH, 'a', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=temp_fields)
+                        writer.writerow({
+                            'timestamp': timestamp,
+                            'temperature': round(sum(temp_vals) / len(temp_vals), 2),
+                            'humidity': round(sum(humidity_vals) / len(humidity_vals), 2),
+                        })
+
+            if mq_recent_rows:
+                avg_row = {'timestamp': timestamp}
+                has_any_value = False
+                for sid in _MQ_SENSOR_IDS:
+                    key = f'mq{sid}'
+                    vals = [_safe_float(r.get(key)) for r in mq_recent_rows]
+                    vals = [v for v in vals if v is not None]
+                    if vals:
+                        avg_row[key] = int(round(sum(vals) / len(vals)))
+                        has_any_value = True
+                    else:
+                        avg_row[key] = ''
+                if has_any_value:
+                    with open(MQ_HISTORY_12H_PATH, 'a', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=mq_fields)
+                        writer.writerow(avg_row)
+
+        # Trim outside lock; these functions rewrite full files.
+        _trim_history_file(TEMP_HISTORY_12H_PATH, temp_fields)
+        _trim_history_file(MQ_HISTORY_12H_PATH, mq_fields)
+    except Exception as e:
+        print(f'Error rolling up recent histories: {e}')
+
+
+def _sensor_history_sampler_tick():
+    """Sample sensors every second and periodically roll up to 12-hour history."""
+    global _last_history_rollup_at
+
+    sensor = get_sensor()
+    if sensor.has_environment_data():
+        temperature = sensor.get_temperature()
+        humidity = sensor.get_humidity()
+        mq_readings = {}
+        for sid in _MQ_SENSOR_IDS:
+            val = sensor.get_mq_reading(sid)
+            if val is not None:
+                mq_readings[sid] = val
+
+        log_temperature_reading(temperature, humidity)
+        if mq_readings:
+            log_mq_reading(mq_readings)
+
+    now = datetime.now()
+    if _last_history_rollup_at is None:
+        _last_history_rollup_at = now
+        return
+
+    if (now - _last_history_rollup_at).total_seconds() >= _RECENT_TO_LONG_ROLLUP_SECONDS:
+        _last_history_rollup_at = now
+        _rollup_recent_histories()
+
+
+def _start_sensor_history_sampler():
+    """Start backend history sampling thread (1 Hz)."""
+    def _loop():
+        while True:
+            loop_started = time.monotonic()
+            try:
+                _sensor_history_sampler_tick()
+            except Exception as e:
+                print(f'[history sampler] Unhandled error: {e}')
+
+            elapsed = time.monotonic() - loop_started
+            sleep_for = max(0.0, _SAMPLER_INTERVAL_SECONDS - elapsed)
+            time.sleep(sleep_for)
+
+    _ensure_history_files()
+    t = threading.Thread(target=_loop, daemon=True, name='history-sampler')
+    t.start()
+    print('[history sampler] Background sensor history sampler started (1s interval)')
+
+
+_start_sensor_history_sampler()
+
+
+def log_temperature_reading(temperature, humidity):
+    """Log one-second temperature sample to short-term history."""
+    try:
+        fieldnames = ['timestamp', 'temperature', 'humidity']
+        row = {
+            'timestamp': datetime.now().isoformat(),
+            'temperature': round(temperature, 2),
+            'humidity': round(humidity, 2),
+        }
+        _append_recent_row(TEMP_RECENT_PATH, fieldnames, row)
 
     except Exception as e:
         print(f'Error logging temperature: {e}')
 
 
 def log_mq_reading(mq_readings: dict):
-    """Log MQ sensor readings with timestamp (keeps last 12 hours)"""
+    """Log one-second MQ samples to short-term history."""
     try:
-        mq_history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'mq_history.csv')
-        mq_ids = [2, 3, 4, 5, 8, 9, 135]
-        fieldnames = ['timestamp'] + [f'mq{sid}' for sid in mq_ids]
-        timestamp = datetime.now().isoformat()
-
-        row = {'timestamp': timestamp}
-        for sid in mq_ids:
+        fieldnames = ['timestamp'] + [f'mq{sid}' for sid in _MQ_SENSOR_IDS]
+        row = {'timestamp': datetime.now().isoformat()}
+        for sid in _MQ_SENSOR_IDS:
             row[f'mq{sid}'] = mq_readings.get(sid, '')
-
-        # Append new row
-        write_header = not os.path.exists(mq_history_path)
-        with open(mq_history_path, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            if write_header:
-                writer.writeheader()
-            writer.writerow(row)
-
-        # Remove rows older than 12 hours
-        _trim_history_file(mq_history_path, fieldnames)
+        _append_recent_row(MQ_RECENT_PATH, fieldnames, row)
 
     except Exception as e:
         print(f'Error logging MQ readings: {e}')
@@ -2005,12 +2144,6 @@ def get_sensor_data():
         if val is not None:
             mq_readings[sid] = val
 
-    # Log readings if sensors are connected
-    if connected:
-        log_temperature_reading(temperature, humidity)
-        if mq_readings:
-            log_mq_reading(mq_readings)
-
     return jsonify({
         'temperature': temperature,
         'humidity': humidity,
@@ -2242,25 +2375,30 @@ def update_daily_stats():
 
 @app.route('/api/stats/temperature', methods=['GET'])
 def get_temperature_history():
-    """Get temperature history for the last 12 hours"""
+    """Get temperature history from recent or 12h rolled-up data."""
     try:
-        temp_history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'temperature_history.csv')
+        scope = (request.args.get('scope', 'long') or 'long').strip().lower()
+        limit_param = request.args.get('limit')
+        limit = None
+        if limit_param:
+            try:
+                limit = max(1, int(limit_param))
+            except ValueError:
+                limit = None
+
+        source_path = TEMP_RECENT_PATH if scope == 'recent' else TEMP_HISTORY_12H_PATH
         history = []
-        cutoff = datetime.now() - timedelta(hours=12)
-        
-        with open(temp_history_path, 'r', newline='', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                try:
-                    if datetime.fromisoformat(row['timestamp']) < cutoff:
-                        continue
-                except Exception:
-                    pass
-                history.append({
-                    'timestamp': row['timestamp'],
-                    'temperature': float(row['temperature']),
-                    'humidity': float(row['humidity'])
-                })
+
+        rows = _read_csv_rows(source_path)
+        if limit is not None and len(rows) > limit:
+            rows = rows[-limit:]
+
+        for row in rows:
+            history.append({
+                'timestamp': row.get('timestamp', ''),
+                'temperature': _safe_float(row.get('temperature')),
+                'humidity': _safe_float(row.get('humidity')),
+            })
         
         return jsonify(history)
     except Exception as e:
@@ -2269,25 +2407,30 @@ def get_temperature_history():
 
 @app.route('/api/stats/mq', methods=['GET'])
 def get_mq_history():
-    """Get MQ sensor history for the last 12 hours"""
+    """Get MQ history from recent or 12h rolled-up data."""
     try:
-        mq_history_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'mq_history.csv')
-        mq_ids = [2, 3, 4, 5, 8, 9, 135]
+        scope = (request.args.get('scope', 'long') or 'long').strip().lower()
+        limit_param = request.args.get('limit')
+        limit = None
+        if limit_param:
+            try:
+                limit = max(1, int(limit_param))
+            except ValueError:
+                limit = None
+
+        source_path = MQ_RECENT_PATH if scope == 'recent' else MQ_HISTORY_12H_PATH
         history = []
-        cutoff = datetime.now() - timedelta(hours=12)
-        with open(mq_history_path, 'r', newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    if datetime.fromisoformat(row['timestamp']) < cutoff:
-                        continue
-                except Exception:
-                    pass
-                entry = {'timestamp': row['timestamp']}
-                for sid in mq_ids:
-                    v = row.get(f'mq{sid}', '')
-                    entry[f'mq{sid}'] = int(v) if v != '' else None
-                history.append(entry)
+
+        rows = _read_csv_rows(source_path)
+        if limit is not None and len(rows) > limit:
+            rows = rows[-limit:]
+
+        for row in rows:
+            entry = {'timestamp': row.get('timestamp', '')}
+            for sid in _MQ_SENSOR_IDS:
+                entry[f'mq{sid}'] = _safe_float(row.get(f'mq{sid}'))
+            history.append(entry)
+
         return jsonify(history)
     except Exception as e:
         print(f'Error reading MQ history: {e}')

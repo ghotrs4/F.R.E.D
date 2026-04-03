@@ -129,15 +129,15 @@ onMounted(async () => {
   wasteHistory.value = await getWasteHistory()
   
   // Fetch initial temperature history
-  temperatureHistory.value = await getTemperatureHistory()
+  temperatureHistory.value = await getTemperatureHistory({ scope: 'recent', limit: 50 })
   
-  // Poll for sensor data updates every 0.5 seconds
+  // Poll for sensor data updates every 1 second
   sensorUpdateInterval = setInterval(async () => {
     const sensorData = await getSensorData()
     temperature.value = sensorData.temperature
     humidity.value = sensorData.humidity
     sensorsConnected.value = sensorData.connected
-  }, 500)
+  }, 1000)
   
   // Poll for food data updates every 3 seconds
   foodsUpdateInterval = setInterval(async () => {
@@ -152,18 +152,18 @@ onMounted(async () => {
     wasteHistory.value = await getWasteHistory()
   }, 30000)
   
-  // Poll for temperature history updates every 0.5 seconds
+  // Poll for temperature history updates every 1 second
   temperatureUpdateInterval = setInterval(async () => {
-    temperatureHistory.value = await getTemperatureHistory()
-  }, 500)
+    temperatureHistory.value = await getTemperatureHistory({ scope: 'recent', limit: 50 })
+  }, 1000)
 
   // Fetch initial MQ history
-  mqHistory.value = await getMqHistory()
+  mqHistory.value = await getMqHistory({ scope: 'recent', limit: 50 })
 
-  // Poll for MQ history updates every 0.5 seconds
+  // Poll for MQ history updates every 1 second
   mqUpdateInterval = setInterval(async () => {
-    mqHistory.value = await getMqHistory()
-  }, 500)
+    mqHistory.value = await getMqHistory({ scope: 'recent', limit: 50 })
+  }, 1000)
 })
 
 onUnmounted(() => {

@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { loadFoodsFromCSV } from '../utils/csvParser'
-import { getSensorData } from '../utils/sensorApi'
 import { getWasteHistory, getTemperatureHistory, getMqHistory, getGasContributors } from '../utils/statsApi'
 import { MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET, classifyMqReading } from '../utils/mqSensorConfig'
 
@@ -305,10 +304,20 @@ const handleKeyDown = (event) => {
 
 let greetingInterval
 let foodsUpdateInterval
-let sensorUpdateInterval
 let historyUpdateInterval
 let temperatureHistoryUpdateInterval
 let mqUpdateInterval
+
+const applyLatestEnvSample = (samples) => {
+  if (!Array.isArray(samples) || samples.length === 0) return
+  const latest = samples[samples.length - 1]
+  if (latest.temperature != null) {
+    temperature.value = Number(latest.temperature)
+  }
+  if (latest.humidity != null) {
+    humidity.value = Number(latest.humidity)
+  }
+}
 
 const handleFoodAdded = async () => {
   // Refresh foods list when a new item is added via global scanner
@@ -321,18 +330,18 @@ onMounted(async () => {
   
   // Listen for food-added event from global scanner
   window.addEventListener('food-added', handleFoodAdded)
-  
-  // Fetch initial sensor data
-  const sensorData = await getSensorData()
-  temperature.value = sensorData.temperature
-  humidity.value = sensorData.humidity
-  sensorConnected.value = sensorData.connected
-  
+
   // Fetch initial history data
   wasteHistory.value = await getWasteHistory()
-  temperatureHistory.value = await getTemperatureHistory()
-  mqHistory.value = await getMqHistory()
-  gasContributorState.value = await getGasContributors()
+  temperatureHistory.value = await getTemperatureHistory({ scope: 'long' })
+  mqHistory.value = await getMqHistory({ scope: 'recent', limit: 50 })
+  const [latestEnvSamples, gasContributors] = await Promise.all([
+    getTemperatureHistory({ scope: 'recent', limit: 1 }),
+    getGasContributors()
+  ])
+  applyLatestEnvSample(latestEnvSamples)
+  gasContributorState.value = gasContributors
+  sensorConnected.value = Boolean(gasContributors.connected)
   
   // Load recipes from localStorage (no API calls)
   // Recipes are cached by the Recipes page
@@ -365,30 +374,25 @@ onMounted(async () => {
     }
   }, 3000)
   
-  // Poll for sensor data updates every 5 seconds
-  sensorUpdateInterval = setInterval(async () => {
-    const sensorData = await getSensorData()
-    temperature.value = sensorData.temperature
-    humidity.value = sensorData.humidity
-    sensorConnected.value = sensorData.connected
-  }, 5000)
-  
   // Poll for history data updates every 30 seconds
   historyUpdateInterval = setInterval(async () => {
     wasteHistory.value = await getWasteHistory()
   }, 30000)
 
   temperatureHistoryUpdateInterval = setInterval(async () => {
-    temperatureHistory.value = await getTemperatureHistory()
+    temperatureHistory.value = await getTemperatureHistory({ scope: 'long' })
   }, 30000)
 
   mqUpdateInterval = setInterval(async () => {
-    const [history, gasContributors] = await Promise.all([
-      getMqHistory(),
-      getGasContributors()
+    const [history, gasContributors, latestEnvSamples] = await Promise.all([
+      getMqHistory({ scope: 'recent', limit: 50 }),
+      getGasContributors(),
+      getTemperatureHistory({ scope: 'recent', limit: 1 })
     ])
     mqHistory.value = history
     gasContributorState.value = gasContributors
+    sensorConnected.value = Boolean(gasContributors.connected)
+    applyLatestEnvSample(latestEnvSamples)
   }, 1000)
 })
 
@@ -397,7 +401,6 @@ onUnmounted(() => {
   window.removeEventListener('food-added', handleFoodAdded)
   clearInterval(greetingInterval)
   clearInterval(foodsUpdateInterval)
-  clearInterval(sensorUpdateInterval)
   clearInterval(historyUpdateInterval)
   clearInterval(temperatureHistoryUpdateInterval)
   clearInterval(mqUpdateInterval)
@@ -644,17 +647,23 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .reading-label {
   color: oklch(0.7 0 0);
   font-size: 0.9rem;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
 }
 
 .reading-value {
   color: oklch(0.9 0 0);
   font-size: 1.1rem;
   font-weight: 600;
+  flex-shrink: 0;
+  margin-left: 0.25rem;
 }
 
 .empty-inventory {

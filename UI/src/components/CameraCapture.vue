@@ -38,6 +38,9 @@ const statusMessage = ref('')
 const isBatchProcessing = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
 const captureCooldown = ref(false)
+const localFacingMode = ref('environment')
+const isSwitchingLocalCamera = ref(false)
+const localVideoInputCount = ref(0)
 const debugCanvasRef = ref(null)
 const showDebugOverlay = ref(false)
 const tapTimer = ref(null)
@@ -52,6 +55,8 @@ const piStreamUrl = computed(() => {
   if (!piStreamActive.value) return ''
   return `${apiUrl('/api/camera/stream')}?t=${piStreamNonce.value}`
 })
+
+const canSwitchLocalCamera = computed(() => cameraMode.value === 'local' && localVideoInputCount.value !== 1)
 
 const DOUBLE_TAP_WINDOW_MS = 280
 const GESTURE_DEDUPE_MS = 80
@@ -153,24 +158,97 @@ const startCamera = async () => {
   await startLocalCamera()
 }
 
+const refreshVideoInputCount = async () => {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    localVideoInputCount.value = 0
+    return
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    localVideoInputCount.value = devices.filter(device => device.kind === 'videoinput').length
+  } catch (e) {
+    console.warn('Unable to enumerate video devices:', e)
+    localVideoInputCount.value = 0
+  }
+}
+
 const startLocalCamera = async () => {
+  const baseVideoConstraints = {
+    width: { ideal: 1280 },
+    height: { ideal: 720 }
+  }
+
   try {
     stream.value = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: 'environment',
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        ...baseVideoConstraints,
+        facingMode: { ideal: localFacingMode.value }
       }
     })
+  } catch (e) {
+    if (e?.name === 'OverconstrainedError' || e?.name === 'NotFoundError') {
+      // Fallback for browsers/devices that do not support facingMode selection.
+      try {
+        stream.value = await navigator.mediaDevices.getUserMedia({
+          video: baseVideoConstraints
+        })
+      } catch (fallbackError) {
+        error.value = 'Failed to access camera. Please ensure camera permissions are granted.'
+        console.error('Camera error:', fallbackError)
+        return false
+      }
+    } else {
+      error.value = 'Failed to access camera. Please ensure camera permissions are granted.'
+      console.error('Camera error:', e)
+      return false
+    }
+  }
+
+  try {
     if (videoRef.value) {
       videoRef.value.srcObject = stream.value
       isCameraActive.value = true
+      error.value = null
+      const activeTrack = stream.value?.getVideoTracks()?.[0]
+      const facing = activeTrack?.getSettings?.().facingMode
+      if (facing === 'environment' || facing === 'user') {
+        localFacingMode.value = facing
+      }
+      await refreshVideoInputCount()
       startDetection()
     }
+    return true
   } catch (e) {
     error.value = 'Failed to access camera. Please ensure camera permissions are granted.'
     console.error('Camera error:', e)
+    return false
   }
+}
+
+const switchLocalCamera = async () => {
+  if (cameraMode.value !== 'local' || isSwitchingLocalCamera.value || isBatchProcessing.value) return
+
+  isSwitchingLocalCamera.value = true
+  const nextFacingMode = localFacingMode.value === 'environment' ? 'user' : 'environment'
+  localFacingMode.value = nextFacingMode
+  statusMessage.value = `Switching to ${nextFacingMode === 'environment' ? 'back' : 'front'} camera...`
+
+  stopDetection()
+  stopLocalCamera()
+  isCameraActive.value = false
+
+  const switched = await startLocalCamera()
+  if (switched) {
+    statusMessage.value = `Using ${localFacingMode.value === 'environment' ? 'back' : 'front'} camera`
+    setTimeout(() => {
+      if (statusMessage.value.startsWith('Using ')) {
+        statusMessage.value = ''
+      }
+    }, 1200)
+  }
+
+  isSwitchingLocalCamera.value = false
 }
 
 const stopLocalCamera = () => {
@@ -585,6 +663,7 @@ const handleKeyDown = (event) => {
 }
 
 onMounted(async () => {
+  await refreshVideoInputCount()
   // Load MediaPipe EfficientDet model (all assets served locally)
   try {
     const vision = await FilesetResolver.forVisionTasks('/mediapipe/wasm')
@@ -680,15 +759,29 @@ onUnmounted(() => {
       </div>
       
       <div class="camera-footer">
-        <button class="cancel-button" @click="close">Cancel</button>
-        <button 
-          class="finish-button" 
-          @click="finishScanning"
-          :disabled="!isCameraActive || isBatchProcessing"
-        >
-          <span v-if="isBatchProcessing">Classifying {{ capturedBlobs.length }} item(s)...</span>
-          <span v-else>✓ Finish ({{ capturedBlobs.length }})</span>
-        </button>
+        <div v-if="canSwitchLocalCamera" class="camera-footer-top">
+          <button
+            class="switch-camera-button"
+            @click="switchLocalCamera"
+            aria-label="Switch camera"
+            title="Switch camera"
+            :disabled="!isCameraActive || isBatchProcessing || isSwitchingLocalCamera"
+          >
+            <span v-if="isSwitchingLocalCamera">...</span>
+            <span v-else>&#8635;</span>
+          </button>
+        </div>
+        <div class="camera-footer-actions">
+          <button class="cancel-button" @click="close">Cancel</button>
+          <button 
+            class="finish-button" 
+            @click="finishScanning"
+            :disabled="!isCameraActive || isBatchProcessing"
+          >
+            <span v-if="isBatchProcessing">Classifying {{ capturedBlobs.length }} item(s)...</span>
+            <span v-else>✓ Finish ({{ capturedBlobs.length }})</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -920,14 +1013,26 @@ onUnmounted(() => {
 
 .camera-footer {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 1rem;
   padding: 1.5rem;
   border-top: 1px solid oklch(0.3 0 0);
 }
 
+.camera-footer-top {
+  display: flex;
+  justify-content: center;
+}
+
+.camera-footer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .cancel-button,
-.finish-button {
+.finish-button,
+.switch-camera-button {
   flex: 1;
   padding: 0.75rem 1.5rem;
   border: none;
@@ -951,11 +1056,27 @@ onUnmounted(() => {
   color: white;
 }
 
+.switch-camera-button {
+  background-color: transparent;
+  color: white;
+  flex: 0 0 auto;
+  width: 3rem;
+  min-width: 3rem;
+  padding: 0.65rem;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.switch-camera-button:hover:not(:disabled) {
+  background-color: oklch(0.35 0 0);
+}
+
 .finish-button:hover:not(:disabled) {
   background-color: oklch(0.7 0.22 145);
 }
 
-.finish-button:disabled {
+.finish-button:disabled,
+.switch-camera-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
