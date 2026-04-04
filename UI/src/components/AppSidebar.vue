@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar'
 import { Home, Package } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
@@ -24,7 +24,18 @@ const developerAuthMessage = ref('')
 const showPasswordModal = ref(false)
 const pendingPasswordAction = ref(null)
 const passwordInput = ref('')
+const passwordInputEl = ref(null)
 let pendingAuthCallback = null
+
+const focusPasswordField = () => {
+  nextTick(() => {
+    setTimeout(() => {
+      if (passwordInputEl.value && typeof passwordInputEl.value.focus === 'function') {
+        passwordInputEl.value.focus()
+      }
+    }, 0)
+  })
+}
 
 const requestDeveloperPassword = (actionLabel) => {
   return new Promise((resolve) => {
@@ -33,6 +44,7 @@ const requestDeveloperPassword = (actionLabel) => {
     developerAuthMessage.value = ''
     showPasswordModal.value = true
     pendingAuthCallback = resolve
+    focusPasswordField()
   })
 }
 
@@ -47,6 +59,7 @@ const submitPasswordModal = () => {
   if (enteredPassword !== DEV_SETTINGS_PASSWORD) {
     developerAuthMessage.value = 'Incorrect password.'
     passwordInput.value = ''
+    focusPasswordField()
     return
   }
 
@@ -204,29 +217,31 @@ const handleCalibrateMq = async () => {
         </p>
         <p v-if="developerAuthMessage" class="toggle-hint dev-auth-message">{{ developerAuthMessage }}</p>
       </div>
+      <!-- Developer Password Modal -->
+      <div v-if="showPasswordModal" class="password-modal-overlay" @click.self="cancelPasswordModal">
+        <div class="password-modal">
+          <h3>Developer Settings</h3>
+          <p class="modal-prompt">Enter password to {{ pendingPasswordAction }}:</p>
+          <input
+            ref="passwordInputEl"
+            v-model="passwordInput"
+            type="password"
+            class="modal-password-input"
+            placeholder="Password"
+            autocomplete="current-password"
+            autocapitalize="none"
+            autocorrect="off"
+            @keydown="handlePasswordModalKeydown"
+          />
+          <p v-if="developerAuthMessage" class="modal-auth-message">{{ developerAuthMessage }}</p>
+          <div class="modal-buttons">
+            <button class="modal-cancel-btn" @click="cancelPasswordModal">Cancel</button>
+            <button class="modal-submit-btn" @click="submitPasswordModal">Submit</button>
+          </div>
+        </div>
+      </div>
     </SidebarContent>
   </Sidebar>
-
-  <!-- Developer Password Modal -->
-  <div v-if="showPasswordModal" class="password-modal-overlay" @click.self="cancelPasswordModal">
-    <div class="password-modal">
-      <h3>Developer Settings</h3>
-      <p class="modal-prompt">Enter password to {{ pendingPasswordAction }}:</p>
-      <input
-        v-model="passwordInput"
-        type="password"
-        class="modal-password-input"
-        placeholder="Password"
-        @keydown="handlePasswordModalKeydown"
-        autofocus
-      />
-      <p v-if="developerAuthMessage" class="modal-auth-message">{{ developerAuthMessage }}</p>
-      <div class="modal-buttons">
-        <button class="modal-cancel-btn" @click="cancelPasswordModal">Cancel</button>
-        <button class="modal-submit-btn" @click="submitPasswordModal">Submit</button>
-      </div>
-    </div>
-  </div>
 </template>
 
 <style scoped>
