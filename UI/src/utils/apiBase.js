@@ -4,7 +4,7 @@ const resolveDefaultApiBaseUrl = () => {
   if (import.meta.env.DEV) return ''
   if (typeof window === 'undefined') return ''
 
-  return `https://${window.location.hostname}:5000`
+  return window.location.origin
 }
 
 export const API_BASE_URL = trimTrailingSlash(
