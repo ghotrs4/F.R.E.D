@@ -57,7 +57,7 @@ void initSerial(void);
 
 void setup(void) {
   //set power level of Bluetooth transmission for maximum range
-  esp_bredr_tx_power_set(ESP_PWR_LVL_P9, ESP_PWR_LVL_P9);
+  esp_bredr_tx_power_set(ESP_PWR_LVL_P6, ESP_PWR_LVL_P9);
   //init status LEDs
   pinMode(STATUS_LED, OUTPUT);
   pinMode(ONBOARD_LED, OUTPUT);

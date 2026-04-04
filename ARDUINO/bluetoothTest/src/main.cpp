@@ -15,26 +15,32 @@
 
 BluetoothSerial SerialBT;
 
+const char *msg = "Hello from ESP32!";
+const char *BT_wait = "Waiting to establish bluetooth connection.";
+
 void setup() {
   Serial.begin(115200);
  SerialBT.begin("ESP32test"); //Bluetooth device name // <------- set this to be the same as the name you chose above!!!!!
  Serial.println("The device started, now you can pair it with bluetooth!");
- pinMode(BUILTIN_LED, OUTPUT);
 }
 
 void loop() {
   if (Serial.available()) {
     SerialBT.write(Serial.read());
+    // Serial.write((uint8_t*)msg, strlen(msg));
+    Serial.println("");
   }
 
   if (SerialBT.available()) {
     Serial.write(SerialBT.read());
+    // SerialBT.write((uint8_t*)msg, strlen(msg));
+    SerialBT.println("");
   }
   
   if(!SerialBT.hasClient()) {
-    digitalWrite(BUILTIN_LED, LOW);
+    Serial.write((uint8_t*)BT_wait, strlen(BT_wait));
+    Serial.println("");
     delay(100);
-    digitalWrite(BUILTIN_LED, HIGH);
   }
   delay(20);
 }
