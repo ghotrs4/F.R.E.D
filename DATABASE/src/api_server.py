@@ -3182,6 +3182,9 @@ Return ONLY the JSON, no extra text.
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
+@app.route("/", methods=["GET"])
+def index():
+    return "F.R.E.D backend is running", 200
 
 if __name__ == '__main__':
     # Purge any rows older than 12 hours that may have accumulated while the
