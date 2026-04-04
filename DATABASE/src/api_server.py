@@ -48,6 +48,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 PI_CAMERA_STREAM_URL = os.environ.get('PI_CAMERA_STREAM_URL', 'http://raspberrypi.local:8081/stream')
 PI_CAMERA_SNAPSHOT_URL = os.environ.get('PI_CAMERA_SNAPSHOT_URL', 'http://raspberrypi.local:8081/snapshot')
+SENSOR_UPSTREAM_BASE_URL = (os.environ.get('SENSOR_UPSTREAM_BASE_URL') or '').strip().rstrip('/')
 
 
 def _is_http_camera_url(url: str) -> bool:
@@ -67,6 +68,74 @@ def _get_timeout_seconds(env_name, default_seconds):
 
 
 _GEMINI_REQUEST_TIMEOUT_SECONDS = _get_timeout_seconds('GEMINI_REQUEST_TIMEOUT_SECONDS', 10.0)
+_SENSOR_UPSTREAM_TIMEOUT_SECONDS = _get_timeout_seconds('SENSOR_UPSTREAM_TIMEOUT_SECONDS', 3.0)
+
+
+def _coerce_float(value, default):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _normalize_mq_readings(raw_readings):
+    normalized = {}
+    if not isinstance(raw_readings, dict):
+        return normalized
+    for key, value in raw_readings.items():
+        try:
+            sensor_id = int(key)
+            sensor_value = int(float(value))
+        except Exception:
+            continue
+        normalized[sensor_id] = sensor_value
+    return normalized
+
+
+def _get_sensor_snapshot():
+    """Return normalized sensor values from upstream API or local serial sensor."""
+    if SENSOR_UPSTREAM_BASE_URL:
+        try:
+            upstream = requests.get(
+                f'{SENSOR_UPSTREAM_BASE_URL}/api/sensor',
+                timeout=_SENSOR_UPSTREAM_TIMEOUT_SECONDS,
+            )
+            upstream.raise_for_status()
+            payload = upstream.json() if upstream.content else {}
+            connected = bool(payload.get('connected', False))
+            temperature = _coerce_float(payload.get('temperature'), 4.0)
+            humidity = _coerce_float(payload.get('humidity'), 50.0)
+            mq_readings = _normalize_mq_readings(payload.get('mq_readings', {}))
+            return {
+                'connected': connected,
+                'temperature': temperature,
+                'humidity': humidity,
+                'mq_readings': mq_readings,
+            }
+        except Exception as e:
+            print(f'[sensor upstream] Failed to fetch from {SENSOR_UPSTREAM_BASE_URL}/api/sensor: {e}')
+            return {
+                'connected': False,
+                'temperature': 4.0,
+                'humidity': 50.0,
+                'mq_readings': {},
+            }
+
+    sensor = get_sensor()
+    connected = sensor.has_environment_data()
+    mq_readings = {}
+    for sid in _MQ_SENSOR_IDS:
+        val = sensor.get_mq_reading(sid)
+        if val is not None:
+            mq_readings[sid] = val
+    return {
+        'connected': connected,
+        'temperature': sensor.get_temperature(),
+        'humidity': sensor.get_humidity(),
+        'mq_readings': mq_readings,
+    }
 
 
 def _run_with_timeout(func, timeout_seconds):
@@ -516,12 +585,12 @@ def _environment_monitor_tick():
     """
     global _unsafe_window_start, _unsafe_window_type
 
-    sensor = get_sensor()
-    if not sensor.is_connected():
+    snapshot = _get_sensor_snapshot()
+    if not snapshot['connected']:
         return   # No data → don't penalise items
 
-    temp     = sensor.get_temperature()
-    humidity = sensor.get_humidity()
+    temp = snapshot['temperature']
+    humidity = snapshot['humidity']
 
     temp_unsafe     = temp     > _UNSAFE_TEMP_HIGH
     humidity_unsafe = (humidity < _UNSAFE_HUMIDITY_LOW or humidity > _UNSAFE_HUMIDITY_HIGH)
@@ -616,19 +685,15 @@ def read_foods():
     """
     global _last_temp_abuse_update
 
-    sensor = get_sensor()
+    snapshot = _get_sensor_snapshot()
+    sensor_connected = snapshot['connected']
     
     # If sensor is disconnected, assume safe conditions rather than penalizing food
     # with potentially stale/incorrect readings
-    if sensor.is_connected():
-        current_temp = sensor.get_temperature()
-        current_humidity = sensor.get_humidity()
-        mq_ids = [2, 3, 4, 5, 8, 9, 135]
-        current_mq_readings = {}
-        for sid in mq_ids:
-            val = sensor.get_mq_reading(sid)
-            if val is not None:
-                current_mq_readings[sid] = val
+    if sensor_connected:
+        current_temp = snapshot['temperature']
+        current_humidity = snapshot['humidity']
+        current_mq_readings = snapshot['mq_readings']
     else:
         # Assume safe middle-ground values when disconnected
         current_temp = 4.0
@@ -641,7 +706,7 @@ def read_foods():
     # _last_temp_abuse_update is only advanced after a successful DB write to ensure
     # no elapsed time is silently dropped if the write fails.
     now = datetime.now()
-    if sensor.is_connected() and current_temp > _UNSAFE_TEMP_HIGH and _last_temp_abuse_update is not None:
+    if sensor_connected and current_temp > _UNSAFE_TEMP_HIGH and _last_temp_abuse_update is not None:
         _abuse_delta_hours = (now - _last_temp_abuse_update).total_seconds() / 3600
     else:
         _abuse_delta_hours = 0.0
@@ -911,15 +976,11 @@ def _sensor_history_sampler_tick():
     """Sample sensors every second and periodically roll up to 12-hour history."""
     global _last_history_rollup_at
 
-    sensor = get_sensor()
-    if sensor.has_environment_data():
-        temperature = sensor.get_temperature()
-        humidity = sensor.get_humidity()
-        mq_readings = {}
-        for sid in _MQ_SENSOR_IDS:
-            val = sensor.get_mq_reading(sid)
-            if val is not None:
-                mq_readings[sid] = val
+    snapshot = _get_sensor_snapshot()
+    if snapshot['connected']:
+        temperature = snapshot['temperature']
+        humidity = snapshot['humidity']
+        mq_readings = snapshot['mq_readings']
 
         log_temperature_reading(temperature, humidity)
         if mq_readings:
@@ -2131,18 +2192,11 @@ def proxy_camera_snapshot():
 @app.route('/api/sensor', methods=['GET'])
 def get_sensor_data():
     """Get current sensor readings (temperature, humidity, and MQ gas sensors)"""
-    sensor = get_sensor()
-    temperature = sensor.get_temperature()
-    humidity = sensor.get_humidity()
-    connected = sensor.has_environment_data()
-
-    # Collect all known MQ sensor IDs
-    mq_ids = [2, 3, 4, 5, 8, 9, 135]
-    mq_readings = {}
-    for sid in mq_ids:
-        val = sensor.get_mq_reading(sid)
-        if val is not None:
-            mq_readings[sid] = val
+    snapshot = _get_sensor_snapshot()
+    temperature = snapshot['temperature']
+    humidity = snapshot['humidity']
+    connected = snapshot['connected']
+    mq_readings = snapshot['mq_readings']
 
     return jsonify({
         'temperature': temperature,
@@ -2155,6 +2209,12 @@ def get_sensor_data():
 @app.route('/api/sensor/mq/calibrate', methods=['POST'])
 def calibrate_mq_sensor_max():
     """Calibrate each MQ sensor max value to the current live reading."""
+    if SENSOR_UPSTREAM_BASE_URL:
+        return jsonify({
+            'error': 'MQ calibration is only supported when the sensor is directly connected to this backend',
+            'sensorUpstreamBaseUrl': SENSOR_UPSTREAM_BASE_URL,
+        }), 501
+
     sensor = get_sensor()
     if not sensor.is_connected():
         return jsonify({'error': 'Sensors are not connected'}), 503
@@ -2441,15 +2501,9 @@ def get_mq_history():
 def get_gas_contributors():
     """Return dominant gas severity and top suspected food contributors."""
     try:
-        sensor = get_sensor()
-        connected = sensor.has_environment_data()
-
-        mq_ids = [2, 3, 4, 5, 8, 9, 135]
-        mq_readings = {}
-        for sid in mq_ids:
-            val = sensor.get_mq_reading(sid)
-            if val is not None:
-                mq_readings[sid] = val
+        snapshot = _get_sensor_snapshot()
+        connected = snapshot['connected']
+        mq_readings = snapshot['mq_readings']
 
         foods = read_foods()
         confirmed_foods = [f for f in foods if f.get('status') == 'confirmed']
