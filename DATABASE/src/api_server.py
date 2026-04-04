@@ -69,6 +69,10 @@ def _get_timeout_seconds(env_name, default_seconds):
 
 _GEMINI_REQUEST_TIMEOUT_SECONDS = _get_timeout_seconds('GEMINI_REQUEST_TIMEOUT_SECONDS', 10.0)
 _SENSOR_UPSTREAM_TIMEOUT_SECONDS = _get_timeout_seconds('SENSOR_UPSTREAM_TIMEOUT_SECONDS', 3.0)
+_SENSOR_CALIBRATION_MAX_HISTORY_AGE_SECONDS = _get_timeout_seconds(
+    'SENSOR_CALIBRATION_MAX_HISTORY_AGE_SECONDS',
+    180.0,
+)
 
 
 def _coerce_float(value, default):
@@ -921,6 +925,37 @@ def _safe_float(value):
         return float(value)
     except Exception:
         return None
+
+
+def _latest_mq_readings_from_recent_history(max_age_seconds=None):
+    """Return the newest MQ readings from recent history, or None if stale/missing."""
+    rows = _read_csv_rows(MQ_RECENT_PATH)
+    if not rows:
+        return None
+
+    latest = rows[-1]
+    latest_ts_raw = latest.get('timestamp', '')
+    try:
+        latest_ts = datetime.fromisoformat(latest_ts_raw)
+        if max_age_seconds is None:
+            max_age_seconds = _SENSOR_CALIBRATION_MAX_HISTORY_AGE_SECONDS
+        if max_age_seconds is not None and max_age_seconds > 0:
+            age_seconds = (datetime.now() - latest_ts).total_seconds()
+            if age_seconds > max_age_seconds:
+                return None
+    except Exception:
+        return None
+
+    readings = {}
+    for sid in _MQ_SENSOR_IDS:
+        raw = latest.get(f'mq{sid}')
+        if raw in (None, ''):
+            continue
+        parsed = _safe_float(raw)
+        if parsed is None:
+            continue
+        readings[sid] = int(round(parsed))
+    return readings
 
 
 def _rollup_recent_histories():
@@ -2209,15 +2244,21 @@ def get_sensor_data():
 @app.route('/api/sensor/mq/calibrate', methods=['POST'])
 def calibrate_mq_sensor_max():
     """Calibrate each MQ sensor max value to the current live reading."""
-    if SENSOR_UPSTREAM_BASE_URL:
-        return jsonify({
-            'error': 'MQ calibration is only supported when the sensor is directly connected to this backend',
-            'sensorUpstreamBaseUrl': SENSOR_UPSTREAM_BASE_URL,
-        }), 501
+    sensor = None
+    history_mq_readings = None
 
-    sensor = get_sensor()
-    if not sensor.is_connected():
-        return jsonify({'error': 'Sensors are not connected'}), 503
+    if SENSOR_UPSTREAM_BASE_URL:
+        history_mq_readings = _latest_mq_readings_from_recent_history()
+        if history_mq_readings is None:
+            return jsonify({
+                'error': 'No recent MQ history available for calibration',
+                'sensorUpstreamBaseUrl': SENSOR_UPSTREAM_BASE_URL,
+                'hint': 'Ensure upstream sensor data is flowing and try again',
+            }), 503
+    else:
+        sensor = get_sensor()
+        if not sensor.is_connected():
+            return jsonify({'error': 'Sensors are not connected'}), 503
 
     try:
         with open(MQ_CONFIG_PATH, 'r', encoding='utf-8') as config_file:
@@ -2244,7 +2285,10 @@ def calibrate_mq_sensor_max():
         except (TypeError, ValueError):
             return jsonify({'error': f'Invalid sensor id in config: {sensor_id_str}'}), 500
 
-        reading = sensor.get_mq_reading(sensor_id)
+        if history_mq_readings is not None:
+            reading = history_mq_readings.get(sensor_id)
+        else:
+            reading = sensor.get_mq_reading(sensor_id)
         if reading is None:
             missing_readings.append(sensor_id)
             continue
