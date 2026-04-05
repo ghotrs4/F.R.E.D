@@ -48,7 +48,7 @@ print("\nLoading trained model...")
 # Load the trained weights
 #model_path = "50EPOCH.pth"
 
-model_path = "food_classifier_20260226_204634.pth" #name of custom trained model
+model_path = "food_classifier_20260404_191434.pth" #name of custom trained model
 
 if not os.path.exists(model_path):
     print(f"✗ Error: Model file '{model_path}' not found!")

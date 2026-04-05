@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 import csv
 import os
+import shutil
 import tempfile
 import requests
 import json
@@ -397,6 +398,56 @@ _MQ_SENSOR_IDS = [2, 3, 4, 5, 8, 9, 135]
 _csv_lock = threading.Lock()
 _history_lock = threading.Lock()
 _last_history_rollup_at: datetime | None = None
+
+
+def _csv_has_data_rows(path: str) -> bool:
+    """Return True when a CSV exists and contains at least one non-header row."""
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, 'r', newline='', encoding='utf-8') as file:
+            reader = csv.reader(file)
+            next(reader, None)
+            return next(reader, None) is not None
+    except Exception:
+        return False
+
+
+def _atomic_write_csv(path: str, fieldnames: list, rows: list, backup_path: str | None = None):
+    """Write CSV contents atomically via temp-file + replace."""
+    tmp_dir = os.path.dirname(path) or '.'
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            newline='',
+            encoding='utf-8',
+            dir=tmp_dir,
+            prefix=os.path.basename(path) + '.',
+            suffix='.tmp',
+            delete=False,
+        ) as file:
+            tmp_path = file.name
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        if backup_path and _csv_has_data_rows(path):
+            shutil.copy2(path, backup_path)
+
+        os.replace(tmp_path, path)
+    except Exception:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        raise
+
+
+def _write_db_rows(rows: list, fieldnames: list):
+    """Safely rewrite database.csv and keep a last-known-good backup."""
+    _atomic_write_csv(DB_PATH, fieldnames, rows, backup_path=f'{DB_PATH}.bak')
 
 _OUTCOME_FIELDNAMES = [
     'item_id',
@@ -804,10 +855,7 @@ def read_foods():
                 foods.append(food)
 
             # --- 3. Write all rows back (removed rows preserved, live rows updated) ---
-            with open(DB_PATH, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(all_rows)
+            _write_db_rows(all_rows, fieldnames)
 
             # Advance the abuse timestamp only after a confirmed successful write.
             # If the write above raised an exception we stay at the previous
@@ -1212,11 +1260,7 @@ def write_foods(foods):
                         'removed_at': ''
                     }
 
-            with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                for row in existing_data.values():
-                    writer.writerow(row)
+            _write_db_rows(list(existing_data.values()), fieldnames)
 
         return True
     except Exception as e:
@@ -1266,10 +1310,7 @@ def _purge_old_removed_items():
                     elif status == 'pending_reentry':
                         pass  # cleaned up by outgoing-detection on the next scan
                     rows_to_keep.append(row)
-            with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows_to_keep)
+            _write_db_rows(rows_to_keep, fieldnames)
     except Exception as e:
         print(f'Error purging old removed items: {e}')
 
@@ -1624,10 +1665,7 @@ def create_food():
                             row['status'] = 'pending_reentry'
                             row['removed_at'] = ''
                         rows.append(row)
-                with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                    writer = csv.DictWriter(file, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(rows)
+                _write_db_rows(rows, fieldnames)
             return jsonify({'reentry': True, 'id': removed_match['id'], 'hours_outside': round(hours_outside, 2)}), 200
 
         # --- Exactly one confirmed match: auto-mark as outgoing (fallback) ---
@@ -1651,10 +1689,7 @@ def create_food():
                             # omit → hard-deletes the stale pending row
                         else:
                             rows.append(row)
-                with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                    writer = csv.DictWriter(file, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(rows)
+                _write_db_rows(rows, fieldnames)
             return jsonify({'matched': True, 'outgoing_id': match['id'], 'stale_purged': stale_purged}), 200
 
     # Generate new ID from ALL rows in the CSV (including removed) so that a
@@ -1786,10 +1821,7 @@ def mark_as_new(item_id):
         if not found:
             return jsonify({'error': 'Item not found or not in pending_reentry state'}), 404
 
-        with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-            writer = csv.DictWriter(file, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+        _write_db_rows(rows, fieldnames)
 
         return jsonify({'message': 'Item reset to new pending', 'id': item_id})
     except Exception as e:
@@ -1825,10 +1857,7 @@ def resolve_disambiguation():
                         if row['item_id'] == target_id:
                             row['status'] = 'outgoing'
                         rows.append(dict(row))
-                with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                    writer = csv.DictWriter(file, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(rows)
+                _write_db_rows(rows, fieldnames)
 
             # Only create a new pending item when the disambiguation was
             # 'reentry_or_outgoing': in that context mark_outgoing means
@@ -1894,10 +1923,7 @@ def resolve_disambiguation():
                             row['status'] = 'pending_reentry'
                             row['removed_at'] = ''
                         rows.append(row)
-                with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                    writer = csv.DictWriter(file, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(rows)
+                _write_db_rows(rows, fieldnames)
             return jsonify({'reentry': True, 'id': removed_id, 'hours_outside': round(hours_outside, 2)}), 200
 
         elif action == 'keep_new':
@@ -1971,10 +1997,7 @@ def delete_outgoing_foods():
                         row['removed_at'] = removed_at
                         updated_count += 1
                     rows.append(row)
-            with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows)
+            _write_db_rows(rows, fieldnames)
 
             for item in removed_items:
                 try:
@@ -2092,10 +2115,7 @@ def delete_food(item_id):
             if not found:
                 return jsonify({'error': 'Food not found'}), 404
 
-            with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows)
+            _write_db_rows(rows, fieldnames)
 
         return jsonify({'message': 'Food removed successfully'})
     except Exception as e:
@@ -2152,10 +2172,7 @@ def delete_pending_foods():
                         rows.append(row)
             
             # Write back without pending/pending_reentry items
-            with open(DB_PATH, 'w', newline='', encoding='utf-8') as file:
-                writer = csv.DictWriter(file, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows)
+            _write_db_rows(rows, fieldnames)
         
         return jsonify({'message': f'{deleted_count} pending items deleted', 'count': deleted_count})
     except Exception as e:
