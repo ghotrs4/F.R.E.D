@@ -13,7 +13,7 @@ from PIL import Image
 
 # Paths are resolved relative to this file so they work regardless of cwd
 _BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-_MODEL_PATH = os.path.join(_BASE_DIR, 'food_classifier_20260404_191434.pth')
+_MODEL_PATH = os.path.join(_BASE_DIR, 'food_classifier_20260404_211058.pth')
 _META_PATH  = os.path.join(_BASE_DIR, 'data', 'food-101', 'meta', 'classes.txt')
 
 # Image transform – must match training exactly
