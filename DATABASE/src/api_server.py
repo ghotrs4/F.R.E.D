@@ -180,6 +180,74 @@ def _extract_json_payload(text):
     return result_text.strip()
 
 
+# Local-only fallback metadata for common foods.
+# Used when Gemini is disabled/unavailable so category/packaging fields are still useful.
+_LOCAL_FOOD_DEFAULTS = {
+    'milk': {'category': 'dairy', 'packaging_type': 'bottled', 'storage_location': 'door'},
+    'yogurt': {'category': 'dairy', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'cheese': {'category': 'dairy', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'butter': {'category': 'dairy', 'packaging_type': 'wrapped', 'storage_location': 'door'},
+    'egg': {'category': 'dairy', 'packaging_type': 'boxed', 'storage_location': 'regular'},
+    'eggs': {'category': 'dairy', 'packaging_type': 'boxed', 'storage_location': 'regular'},
+    'chicken': {'category': 'meat', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'beef': {'category': 'meat', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'pork': {'category': 'meat', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'fish': {'category': 'seafood', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'salmon': {'category': 'seafood', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'shrimp': {'category': 'seafood', 'packaging_type': 'sealed', 'storage_location': 'regular'},
+    'apple': {'category': 'produce', 'packaging_type': 'loose', 'storage_location': 'crisper'},
+    'banana': {'category': 'produce', 'packaging_type': 'loose', 'storage_location': 'crisper'},
+    'orange': {'category': 'produce', 'packaging_type': 'loose', 'storage_location': 'crisper'},
+    'lettuce': {'category': 'produce', 'packaging_type': 'bagged', 'storage_location': 'crisper'},
+    'spinach': {'category': 'produce', 'packaging_type': 'bagged', 'storage_location': 'crisper'},
+    'tomato': {'category': 'produce', 'packaging_type': 'loose', 'storage_location': 'crisper'},
+    'carrot': {'category': 'produce', 'packaging_type': 'bagged', 'storage_location': 'crisper'},
+    'cucumber': {'category': 'produce', 'packaging_type': 'loose', 'storage_location': 'crisper'},
+    'strawberry': {'category': 'produce', 'packaging_type': 'boxed', 'storage_location': 'crisper'},
+    'soda': {'category': 'beverage', 'packaging_type': 'canned', 'storage_location': 'door'},
+    'juice': {'category': 'beverage', 'packaging_type': 'bottled', 'storage_location': 'door'},
+    'ketchup': {'category': 'condiment', 'packaging_type': 'bottled', 'storage_location': 'door'},
+    'mustard': {'category': 'condiment', 'packaging_type': 'bottled', 'storage_location': 'door'},
+    'mayonnaise': {'category': 'condiment', 'packaging_type': 'jarred', 'storage_location': 'door'},
+    'bell pepper': {'category': 'produce', 'packaging_type': 'loose', 'storage_location': 'crisper'},
+}
+
+
+def _normalize_food_label(label: str) -> str:
+    text = (label or '').lower().strip()
+    return ''.join(ch if ch.isalnum() or ch == ' ' else ' ' for ch in text)
+
+
+def _get_local_fallback_metadata(local_result: dict) -> dict:
+    default_meta = {
+        'category': 'other',
+        'packaging_type': 'sealed',
+        'storage_location': 'regular',
+    }
+    if not local_result:
+        return default_meta
+
+    candidates = []
+    predicted_class = local_result.get('predicted_class')
+    if predicted_class:
+        candidates.append(predicted_class)
+
+    for top_item in local_result.get('top5', []) or []:
+        if isinstance(top_item, dict) and top_item.get('class'):
+            candidates.append(top_item.get('class'))
+
+    # Try exact normalised matches first, then simple contains match.
+    for label in candidates:
+        normalised = _normalize_food_label(label)
+        if normalised in _LOCAL_FOOD_DEFAULTS:
+            return _LOCAL_FOOD_DEFAULTS[normalised]
+        for key, meta in _LOCAL_FOOD_DEFAULTS.items():
+            if key in normalised:
+                return meta
+
+    return default_meta
+
+
 def _build_local_primary_result(local_result):
     """Map local model output to the same schema the frontend expects from Gemini."""
     if not local_result or not local_result.get('predicted_class'):
@@ -196,12 +264,14 @@ def _build_local_primary_result(local_result):
             'top5': []
         }
 
+    fallback_meta = _get_local_fallback_metadata(local_result)
+
     return {
         'predicted_class': local_result.get('predicted_class', 'Unknown'),
         'confidence': local_result.get('confidence', 0),
-        'category': 'other',
-        'packaging_type': 'sealed',
-        'storage_location': 'regular',
+        'category': fallback_meta.get('category', 'other'),
+        'packaging_type': fallback_meta.get('packaging_type', 'sealed'),
+        'storage_location': fallback_meta.get('storage_location', 'regular'),
         'expiration_date': None,
         'description': '',
         'notes': '',
