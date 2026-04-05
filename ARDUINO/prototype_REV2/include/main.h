@@ -22,8 +22,9 @@
 
 void initSerial(void);
 void initSHT(void);
+void initOpt(void);
 void printShtValues(void);
-void printVEMLValues(void);
+void printOptValues(void);
 uint16_t readADC(void);
 void setMultiplexer(short channel);
 
