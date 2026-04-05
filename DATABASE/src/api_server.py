@@ -386,6 +386,31 @@ MQ_CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), '..', '..', 'UI', 'src', 'config', 'mqSensorConfig.json'
 )
 
+_DB_FIELDNAMES = [
+    'item_id',
+    'food_name',
+    'food_category',
+    'entry_date',
+    'expiration_date',
+    'temp_at_entry',
+    'humidity_at_entry',
+    'packaging_type',
+    'storage_location',
+    'status',
+    'cumulative_temp_abuse',
+    'freshness_score',
+    'days_until_spoilage',
+    'safety_category',
+    'confidence',
+    'top5_predictions',
+    'gemini_shelf_life',
+    'gemini_spoilage_params',
+    'description',
+    'prediction_source',
+    'gemini_error',
+    'removed_at',
+]
+
 _RECENT_SAMPLE_LIMIT = 60
 _RECENT_TO_LONG_ROLLUP_SECONDS = 60
 _LONG_HISTORY_HOURS = 12
@@ -415,6 +440,7 @@ def _csv_has_data_rows(path: str) -> bool:
 
 def _atomic_write_csv(path: str, fieldnames: list, rows: list, backup_path: str | None = None):
     """Write CSV contents atomically via temp-file + replace."""
+    fieldnames = list(fieldnames or _DB_FIELDNAMES)
     tmp_dir = os.path.dirname(path) or '.'
     tmp_path = None
     try:
@@ -447,7 +473,7 @@ def _atomic_write_csv(path: str, fieldnames: list, rows: list, backup_path: str 
 
 def _write_db_rows(rows: list, fieldnames: list):
     """Safely rewrite database.csv and keep a last-known-good backup."""
-    _atomic_write_csv(DB_PATH, fieldnames, rows, backup_path=f'{DB_PATH}.bak')
+    _atomic_write_csv(DB_PATH, fieldnames or _DB_FIELDNAMES, rows, backup_path=f'{DB_PATH}.bak')
 
 _OUTCOME_FIELDNAMES = [
     'item_id',
@@ -775,7 +801,7 @@ def read_foods():
             # --- 1. Read ALL rows (removed rows are preserved intact) ---
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
-                fieldnames = reader.fieldnames
+                fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                 all_rows = list(reader)
 
             # --- 2. Recalculate predictions for non-removed rows, update in place ---
@@ -1152,7 +1178,7 @@ def write_foods(foods):
             existing_data = {}
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
-                fieldnames = list(reader.fieldnames)
+                fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                 if 'gemini_shelf_life' not in fieldnames:
                     fieldnames.append('gemini_shelf_life')
                 if 'gemini_spoilage_params' not in fieldnames:
@@ -1297,7 +1323,7 @@ def _purge_old_removed_items():
             rows_to_keep = []
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
-                fieldnames = reader.fieldnames
+                fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                 for row in reader:
                     status = row.get('status')
                     if status == 'removed':
@@ -1657,7 +1683,7 @@ def create_food():
                 rows = []
                 with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                     reader = csv.DictReader(file)
-                    fieldnames = list(reader.fieldnames)
+                    fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                     for row in reader:
                         if row['item_id'] == removed_match['id']:
                             new_abuse = float(row.get('cumulative_temp_abuse') or 0) + hours_outside
@@ -1677,7 +1703,7 @@ def create_food():
                 rows = []
                 with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                     reader = csv.DictReader(file)
-                    fieldnames = list(reader.fieldnames)
+                    fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                     for row in reader:
                         if row['item_id'] == match['id']:
                             row['status'] = 'outgoing'
@@ -1807,7 +1833,7 @@ def mark_as_new(item_id):
         rows = []
         with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
             reader = csv.DictReader(file)
-            fieldnames = list(reader.fieldnames)
+            fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
             for row in reader:
                 if row['item_id'] == item_id and row.get('status') == 'pending_reentry':
                     row['status'] = 'pending'
@@ -1852,7 +1878,7 @@ def resolve_disambiguation():
                 rows = []
                 with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                     reader = csv.DictReader(file)
-                    fieldnames = list(reader.fieldnames)
+                    fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                     for row in reader:
                         if row['item_id'] == target_id:
                             row['status'] = 'outgoing'
@@ -1910,7 +1936,7 @@ def resolve_disambiguation():
                 rows = []
                 with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                     reader = csv.DictReader(file)
-                    fieldnames = list(reader.fieldnames)
+                    fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                     for row in reader:
                         if row['item_id'] == removed_id and row.get('status') == 'removed':
                             try:
@@ -1983,7 +2009,7 @@ def delete_outgoing_foods():
             removed_items = []
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
-                fieldnames = list(reader.fieldnames)
+                fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                 if 'removed_at' not in fieldnames:
                     fieldnames.append('removed_at')
                 for row in reader:
@@ -2088,7 +2114,7 @@ def delete_food(item_id):
             item_status = None
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
-                fieldnames = list(reader.fieldnames)
+                fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                 if 'removed_at' not in fieldnames:
                     fieldnames.append('removed_at')
                 for row in reader:
@@ -2164,7 +2190,7 @@ def delete_pending_foods():
             deleted_count = 0
             with open(DB_PATH, 'r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
-                fieldnames = reader.fieldnames
+                fieldnames = list(reader.fieldnames or _DB_FIELDNAMES)
                 for row in reader:
                     if row.get('status') in ('pending', 'pending_reentry'):
                         deleted_count += 1
