@@ -139,7 +139,6 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { classifyMqReading } from '../utils/mqSensorConfig'
 
 const props = defineProps({
   data: {
@@ -232,7 +231,12 @@ const SAFE_LINE_Y = viewBoxHeight * (2 / 3)
 const HIGH_LINE_Y = viewBoxHeight * (1 / 3)
 
 function classifyReading(sensorId, value) {
-  return classifyMqReading(sensorId, value)
+  const safe = SAFE_RANGES.value[sensorId]
+  if (!safe || value == null) return 'low'
+  const highThreshold = safe.max + HIGH_THRESHOLD_OFFSET.value
+  if (value > highThreshold) return 'high'
+  if (value > safe.max) return 'elevated'
+  return 'low'
 }
 
 // Use safe ranges to define the chart scale so all sensors share the same
@@ -240,15 +244,15 @@ function classifyReading(sensorId, value) {
 function getSensorStats(sensorId) {
   const key = `mq${sensorId}`
   const vals = props.data.map(d => d[key]).filter(v => v != null)
-  const safe = SAFE_RANGES[sensorId]
+  const safe = SAFE_RANGES.value[sensorId]
   if (safe) {
     const dataMin = vals.length ? Math.min(...vals) : safe.min
-    const dataMax = vals.length ? Math.max(...vals) : safe.max + HIGH_THRESHOLD_OFFSET
+    const dataMax = vals.length ? Math.max(...vals) : safe.max + HIGH_THRESHOLD_OFFSET.value
     return {
       safeMin: safe.min,
       safeMax: safe.max,
       lowerMin: Math.min(dataMin, safe.min),
-      upperMax: Math.max(dataMax, safe.max + HIGH_THRESHOLD_OFFSET)
+      upperMax: Math.max(dataMax, safe.max + HIGH_THRESHOLD_OFFSET.value)
     }
   }
   if (!vals.length) {
@@ -263,7 +267,7 @@ const latestReading = computed(() => props.data.length ? props.data[props.data.l
 
 function getYForValue(sensorId, value) {
   const { safeMax, lowerMin, upperMax } = getSensorStats(sensorId)
-  const highThreshold = safeMax + HIGH_THRESHOLD_OFFSET
+  const highThreshold = safeMax + HIGH_THRESHOLD_OFFSET.value
 
   if (value <= safeMax) {
     const lowerRange = Math.max(safeMax - lowerMin, 1)
