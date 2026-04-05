@@ -4,6 +4,10 @@ import csv
 import os
 import shutil
 import tempfile
+try:
+    import fcntl
+except Exception:
+    fcntl = None
 import requests
 import json
 from datetime import datetime, timedelta
@@ -415,6 +419,11 @@ _RECENT_SAMPLE_LIMIT = 60
 _RECENT_TO_LONG_ROLLUP_SECONDS = 60
 _LONG_HISTORY_HOURS = 12
 _SAMPLER_INTERVAL_SECONDS = 1
+_HISTORY_SAMPLER_ENABLED = (os.environ.get('HISTORY_SAMPLER_ENABLED', '1').strip().lower() not in ('0', 'false', 'no', 'off'))
+_HISTORY_SAMPLER_LOCK_PATH = os.environ.get(
+    'HISTORY_SAMPLER_LOCK_PATH',
+    os.path.join(os.path.dirname(__file__), '..', 'data', 'history_sampler.lock'),
+)
 
 _MQ_SENSOR_IDS = [2, 3, 4, 5, 8, 9, 135]
 
@@ -423,6 +432,7 @@ _MQ_SENSOR_IDS = [2, 3, 4, 5, 8, 9, 135]
 _csv_lock = threading.Lock()
 _history_lock = threading.Lock()
 _last_history_rollup_at: datetime | None = None
+_history_sampler_lock_fd: int | None = None
 
 
 def _csv_has_data_rows(path: str) -> bool:
@@ -474,6 +484,32 @@ def _atomic_write_csv(path: str, fieldnames: list, rows: list, backup_path: str 
 def _write_db_rows(rows: list, fieldnames: list):
     """Safely rewrite database.csv and keep a last-known-good backup."""
     _atomic_write_csv(DB_PATH, fieldnames or _DB_FIELDNAMES, rows, backup_path=f'{DB_PATH}.bak')
+
+
+def _acquire_history_sampler_process_lock() -> bool:
+    """Allow only one process to run the history sampler writer loop."""
+    global _history_sampler_lock_fd
+    if fcntl is None:
+        print('[history sampler] fcntl unavailable; skipping process lock guard')
+        return True
+    if _history_sampler_lock_fd is not None:
+        return True
+
+    lock_dir = os.path.dirname(_HISTORY_SAMPLER_LOCK_PATH) or '.'
+    os.makedirs(lock_dir, exist_ok=True)
+    fd = os.open(_HISTORY_SAMPLER_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.ftruncate(fd, 0)
+        os.write(fd, f'{os.getpid()}\n'.encode('utf-8'))
+        _history_sampler_lock_fd = fd
+        return True
+    except BlockingIOError:
+        os.close(fd)
+        return False
+    except Exception:
+        os.close(fd)
+        raise
 
 _OUTCOME_FIELDNAMES = [
     'item_id',
@@ -988,10 +1024,7 @@ def _append_recent_row(path, fieldnames, row):
             rows = _read_csv_rows(path)
         rows.append(row)
         rows = rows[-_RECENT_SAMPLE_LIMIT:]
-        with open(path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+        _atomic_write_csv(path, fieldnames, rows)
 
 
 def _safe_float(value):
@@ -1107,6 +1140,18 @@ def _sensor_history_sampler_tick():
 
 def _start_sensor_history_sampler():
     """Start backend history sampling thread (1 Hz)."""
+    if not _HISTORY_SAMPLER_ENABLED:
+        print('[history sampler] Disabled by HISTORY_SAMPLER_ENABLED=0')
+        return
+
+    try:
+        if not _acquire_history_sampler_process_lock():
+            print('[history sampler] Lock already held by another process; skipping sampler startup')
+            return
+    except Exception as e:
+        print(f'[history sampler] Failed to acquire process lock: {e}')
+        return
+
     def _loop():
         while True:
             loop_started = time.monotonic()
