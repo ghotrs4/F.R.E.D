@@ -3,7 +3,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getSensorData } from '../utils/sensorApi'
 import { loadFoodsFromCSV } from '../utils/csvParser'
 import { getWasteHistory, getTemperatureHistory, getMqHistory } from '../utils/statsApi'
-import { MQ_SAFE_RANGES, classifyMqReading } from '../utils/mqSensorConfig'
 import TemperatureChart from './TemperatureChart.vue'
 import HumidityChart from './HumidityChart.vue'
 import MqChart from './MqChart.vue'
@@ -21,6 +20,8 @@ const wasteHistory = ref([])
 const temperatureHistory = ref([])
 const mqHistory = ref([])
 const mqChartRef = ref(null)
+const mqSafeRanges = ref({})
+const mqHighThresholdOffset = ref(500)
 
 // Render only the most recent samples in charts for readability/performance.
 // Full 12-hour history is still fetched/kept for monitoring and alerts.
@@ -101,14 +102,35 @@ const getReadingStatusColor = (value, min, max, connected) => {
   return value >= min && value <= max ? '#228B22' : '#8B0000'
 }
 
+const classifyMqReadingLive = (sensorId, value) => {
+  const safe = mqSafeRanges.value[sensorId]
+  if (!safe || value == null) return 'low'
+  const highThreshold = safe.max + mqHighThresholdOffset.value
+  if (value > highThreshold) return 'high'
+  if (value > safe.max) return 'elevated'
+  return 'low'
+}
+
+const loadMqConfig = async () => {
+  try {
+    const response = await fetch('/api/sensor/mq/config', { cache: 'no-store' })
+    if (!response.ok) return
+    const data = await response.json()
+    mqSafeRanges.value = data.safeRanges || {}
+    mqHighThresholdOffset.value = Number(data.highThresholdOffset ?? 500)
+  } catch (error) {
+    console.error('[Stats] Failed to load MQ config:', error)
+  }
+}
+
 const mqStatusText = computed(() => {
   if (!sensorsConnected.value) return '--'
   const latest = mqHistory.value.length ? mqHistory.value[mqHistory.value.length - 1] : null
   if (!latest) return '--'
 
   let hasElevated = false
-  for (const sensorId of Object.keys(MQ_SAFE_RANGES).map(Number)) {
-    const status = classifyMqReading(sensorId, latest[`mq${sensorId}`])
+  for (const sensorId of Object.keys(mqSafeRanges.value).map(Number)) {
+    const status = classifyMqReadingLive(sensorId, latest[`mq${sensorId}`])
     if (status === 'high') return 'High levels of gases detected'
     if (status === 'elevated') hasElevated = true
   }
@@ -162,6 +184,7 @@ onMounted(async () => {
 
   // Fetch initial MQ history
   mqHistory.value = await getMqHistory({ scope: 'recent', limit: 50 })
+  await loadMqConfig()
 
   // Poll for MQ history updates every 1 second
   mqUpdateInterval = setInterval(async () => {
@@ -170,6 +193,7 @@ onMounted(async () => {
 
   // Listen for MQ calibration events to refresh chart config
   handleMqCalibrationComplete = async () => {
+    await loadMqConfig()
     if (mqChartRef.value?.refreshMqConfig) {
       await mqChartRef.value.refreshMqConfig()
     }

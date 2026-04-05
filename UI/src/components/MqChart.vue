@@ -202,7 +202,7 @@ const hasNoData = computed(() => props.data.length === 0 || activeSensors.value.
 // Fetch MQ config from backend for real-time calibration updates
 async function loadMqConfig() {
   try {
-    const response = await fetch('/api/sensor/mq/config')
+    const response = await fetch('/api/sensor/mq/config', { cache: 'no-store' })
     if (response.ok) {
       const data = await response.json()
       mqConfigState.value = {
