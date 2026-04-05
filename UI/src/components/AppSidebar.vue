@@ -124,6 +124,8 @@ const handleCalibrateMq = async () => {
     const result = await calibrateMqSensors()
     const updatedCount = Object.keys(result?.updatedMaxValues || {}).length
     calibrationStatus.value = `Calibrated ${updatedCount} MQ sensors.`
+    // Emit event for any listeners (e.g., Stats component) to refresh MQ config
+    window.dispatchEvent(new CustomEvent('mq-calibration-complete', { detail: result }))
   } catch (error) {
     calibrationStatus.value = `Calibration failed: ${error.message}`
   } finally {

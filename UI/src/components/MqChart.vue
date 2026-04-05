@@ -139,7 +139,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET, classifyMqReading } from '../utils/mqSensorConfig'
+import { classifyMqReading } from '../utils/mqSensorConfig'
 
 const props = defineProps({
   data: {
@@ -159,6 +159,12 @@ const svgRef = ref(null)
 const selectedSensorId = ref(null)
 const selectedPointIndex = ref(null)
 const isDragging = ref(false)
+
+// Reactive config state — fetched from backend for real-time calibration updates
+const mqConfigState = ref({
+  safeRanges: {},
+  highThresholdOffset: 500
+})
 
 // All known MQ sensors with display names and colours
 const ALL_SENSORS = [
@@ -188,8 +194,29 @@ const sensorPointsById = computed(() => {
 
 const hasNoData = computed(() => props.data.length === 0 || activeSensors.value.length === 0)
 
-const SAFE_RANGES = MQ_SAFE_RANGES
-const HIGH_THRESHOLD_OFFSET = MQ_HIGH_THRESHOLD_OFFSET
+// Fetch MQ config from backend for real-time calibration updates
+async function loadMqConfig() {
+  try {
+    const response = await fetch('/api/sensor/mq/config')
+    if (response.ok) {
+      const data = await response.json()
+      mqConfigState.value = {
+        safeRanges: data.safeRanges || {},
+        highThresholdOffset: data.highThresholdOffset || 500
+      }
+    }
+  } catch (err) {
+    console.error('[MqChart] Failed to load MQ config:', err)
+  }
+}
+
+// Expose refresh method for parent components (called after calibration)
+async function refreshMqConfig() {
+  await loadMqConfig()
+}
+
+const SAFE_RANGES = computed(() => mqConfigState.value.safeRanges)
+const HIGH_THRESHOLD_OFFSET = computed(() => mqConfigState.value.highThresholdOffset)
 const SAFE_LINE_Y = viewBoxHeight * (2 / 3)
 const HIGH_LINE_Y = viewBoxHeight * (1 / 3)
 
@@ -407,7 +434,13 @@ const tooltipY = computed(() => {
   return Math.min(viewBoxHeight - 26, selectedPoint.value.y + 10)
 })
 
+// Expose refreshMqConfig for parent component to call after calibration
+defineExpose({
+  refreshMqConfig
+})
+
 onMounted(() => {
+  loadMqConfig()
   window.addEventListener('pointermove', handlePointerMove)
   window.addEventListener('pointerup', handlePointerUp)
   document.addEventListener('pointerdown', handleDocumentPointerDown)

@@ -20,6 +20,7 @@ const foods = ref([])
 const wasteHistory = ref([])
 const temperatureHistory = ref([])
 const mqHistory = ref([])
+const mqChartRef = ref(null)
 
 // Render only the most recent samples in charts for readability/performance.
 // Full 12-hour history is still fetched/kept for monitoring and alerts.
@@ -115,6 +116,8 @@ const mqStatusText = computed(() => {
   return hasElevated ? 'Elevated levels of gases detected' : 'No abnormal gases detected'
 })
 
+let handleMqCalibrationComplete
+
 onMounted(async () => {
   // Fetch initial sensor data
   const sensorData = await getSensorData()
@@ -164,6 +167,14 @@ onMounted(async () => {
   mqUpdateInterval = setInterval(async () => {
     mqHistory.value = await getMqHistory({ scope: 'recent', limit: 50 })
   }, 1000)
+
+  // Listen for MQ calibration events to refresh chart config
+  handleMqCalibrationComplete = async () => {
+    if (mqChartRef.value?.refreshMqConfig) {
+      await mqChartRef.value.refreshMqConfig()
+    }
+  }
+  window.addEventListener('mq-calibration-complete', handleMqCalibrationComplete)
 })
 
 onUnmounted(() => {
@@ -172,6 +183,9 @@ onUnmounted(() => {
   clearInterval(historyUpdateInterval)
   clearInterval(temperatureUpdateInterval)
   clearInterval(mqUpdateInterval)
+  if (handleMqCalibrationComplete) {
+    window.removeEventListener('mq-calibration-complete', handleMqCalibrationComplete)
+  }
 })
 </script>
 
@@ -213,7 +227,7 @@ onUnmounted(() => {
             <span class="reading-value-large" style="font-size: 1rem;">{{ mqStatusText }}</span>
           </div>
         </div>
-        <MqChart :data="mqChartData" :connected="sensorsConnected" />
+        <MqChart ref="mqChartRef" :data="mqChartData" :connected="sensorsConnected" />
       </div>
       <div class="sensor-status">
         <span class="status-indicator" :class="{ active: sensorsConnected, disconnected: !sensorsConnected }"></span>

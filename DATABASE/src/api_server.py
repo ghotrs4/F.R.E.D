@@ -2417,8 +2417,28 @@ def calibrate_mq_sensor_max():
         },
         'updatedMinValues': {
             int(sensor_id): value for sensor_id, value in updated_min_values.items()
+        },
+        'safeRanges': {
+            int(sensor_id): safe_ranges.get(sensor_id, {})
+            for sensor_id in updated_max_values.keys()
         }
     })
+
+
+@app.route('/api/sensor/mq/config', methods=['GET'])
+def get_mq_config():
+    """Get current MQ sensor safe ranges and thresholds for graph calibration."""
+    try:
+        with open(MQ_CONFIG_PATH, 'r', encoding='utf-8') as config_file:
+            config = json.load(config_file)
+        return jsonify({
+            'safeRanges': config.get('safeRanges', {}),
+            'defaultMinOffset': config.get('defaultMinOffset', 100),
+            'highThresholdOffset': config.get('highThresholdOffset', 500)
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to read MQ config: {e}'}), 500
+
 
 @app.route('/api/stats/outcome', methods=['POST'])
 def record_outcome():
