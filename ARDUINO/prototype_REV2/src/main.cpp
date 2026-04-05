@@ -1,24 +1,12 @@
+#include <main.h>
 #include <Arduino.h>
 #include <Wire.h>
-#include "BluetoothSerial.h"
-#include "BLEDevice.h"
 #include <stdlib.h>
 
-#define ANALOG_MULTIPLEXER_S0  (uint8_t)12
-#define ANALOG_MULTIPLEXER_S1  (uint8_t)13
-#define ANALOG_MULTIPLEXER_S2  (uint8_t)14
-
-#define ADC_IN                 (uint8_t)36
-
-#define SDA0_PIN                (uint8_t)21
-#define SCL0_PIN                (uint8_t)22 
-#define SDA0_PIN                (uint8_t)21
-#define SCL0_PIN                (uint8_t)22 
-
-#define TEMP_SENSE_EN           (uint8_t)15
-#define SEALEVELPRESSURE_HPA   (1013.25)
-
-#define BT_ENABLE              1
+#include "BluetoothSerial.h"
+#include "BLEDevice.h"
+#include <VEML6040_cust.h>
+#include <SensirionI2cSht3x.h>
 
 #if 1 == BT_ENABLE
 #define SERIAL_CONNECTION                 SerialBT
@@ -40,20 +28,18 @@ const uint8_t sensorMapping[8] = {
   255, // reference voltage
 };
 
-//I2C Glboals
-Adafruit_BME280 bme; // I2C
-TwoWire I2Cone = TwoWire(0);
+//I2C Globals
+VEML veml(SDA0_PIN, SCL0_PIN);
 
-//Function Prototypes
-uint16_t readADC(void);
-void setMultiplexer(short channel);
-void initSerial(void);
+SensirionI2cSht3x sht;
+static char errorMessage[64];
+static int16_t error;
 
 void setup(void) {
-  //set power level of Bluetooth transmission for maximum range
-  esp_bredr_tx_power_set(ESP_PWR_LVL_P9, ESP_PWR_LVL_P9);
+  //set power level of Bluetooth transmission for close to maximum range
+  esp_bredr_tx_power_set(ESP_PWR_LVL_P6, ESP_PWR_LVL_P9);
 
-  //init SERIAL_CONNECTION
+  //init SERIAL_CONNECTION (either BT serial or UART over USB)
   initSerial();
 
   //set the resolution to maximum, 12 bits (0-4095)
@@ -63,11 +49,30 @@ void setup(void) {
   pinMode(ANALOG_MULTIPLEXER_S0, OUTPUT);
   pinMode(ANALOG_MULTIPLEXER_S1, OUTPUT);
   pinMode(ANALOG_MULTIPLEXER_S2, OUTPUT);
+
+  pinMode(TEMP_SENSE_EN, OUTPUT);
+  digitalWrite(TEMP_SENSE_EN, HIGH);
+  delay(10);
   //TODO: set remaining unused GPIOs to high-impedance state
   /*...*/
 
-  //TODO:init I2C
+  //init I2C buses
+  Wire.begin(SDA0_PIN, SCL0_PIN, 100000);    // VEML on first I2C bus
   
+  Wire.beginTransmission(VEML_SLAVE_ADDR);
+  uint8_t vemlProbe = Wire.endTransmission();
+  if (vemlProbe == 0) {
+    log_e("VEML sensor active on I2C.");
+  }
+  else{
+    log_e("VEML I2C probe failed with code: %u", vemlProbe);
+    log_e("Unable to establish VEML sensor on I2C.");
+    while(1){}
+  }
+  
+
+  Wire1.begin(SDA1_PIN, SCL1_PIN);   // SHT on Wire1
+  initSHT();
 }
 
 void loop(void) {
@@ -79,19 +84,21 @@ void loop(void) {
     delay(25); 
     uint16_t getSensorValue = readADC();
 
-    if(SERIAL_CONNECTION.hasClient()){
-      LED_indicator_ok();
+#if 1 == BT_ENABLE
+  if(SERIAL_CONNECTION.hasClient() ){
+#else
+    {
+#endif
       SERIAL_CONNECTION.printf(">MQ%d:",sensorMapping[channel]);
       SERIAL_CONNECTION.printf("%d",getSensorValue);
       SERIAL_CONNECTION.println("");
     }
-    else{
-      LED_indicator_error();
-    }
   }
   //Task 2: Get temp, humidity 
+  printShtValues();
 
-  //Task 3: Get colour sensor reading, output as digital value
+  //Task 3: Get colour sensor reading, output raw value (allow tuning on host side)
+  printVEMLValues();
 }
 
 
@@ -101,55 +108,100 @@ void initSerial(void){
   SERIAL_CONNECTION.begin(115200);
 #else
 // initialize Bluetooth communication with an identifier
-  SERIAL_CONNECTION.begin("ESP32SensorBoard");
+  SERIAL_CONNECTION.begin("ESP32SensorBoardV2");
 // gate until SERIAL_CONNECTION is up
   while(!SERIAL_CONNECTION.hasClient()){
-    LED_indicator_generic();
+
     delay(100);
   }
-  SERIAL_CONNECTION.println("SERIAL_CONNECTION started. Firmware 0.1 for Prototype REV1");    
+  SERIAL_CONNECTION.println("SERIAL_CONNECTION started. Firmware 0.1 for Prototype REV2");    
 #endif
 }
 
-void initI2CBME(void){
-  I2Cone.begin(SDA_PIN, SCL_PIN, 100000);
+void initSHT(void){
+  sht.begin(Wire1, SHT30_I2C_ADDR_44);
 
-  unsigned status;
-  // default settings
-  status = bme.begin(0x76, &I2Cone);  
-  if (!status) {
-    SERIAL_CONNECTION.println("Error establishing BME280 I2C, halting.");
-    for(;;){};
+  sht.stopMeasurement();
+  delay(1);
+  sht.softReset();
+  delay(100);
+
+  uint16_t aStatusRegister = 0u;
+  error = sht.readStatusRegister(aStatusRegister);
+  if (error != NO_ERROR) {
+      SERIAL_CONNECTION.print("Error trying to execute readStatusRegister(): ");
+      errorToString(error, errorMessage, sizeof errorMessage);
+      SERIAL_CONNECTION.println(errorMessage);
+      return;
   }
-  SERIAL_CONNECTION.print("BME280 connection established, expected ID 0x60. Got device ID: 0x");
-  SERIAL_CONNECTION.printf("%x", bme.sensorID());
-  SERIAL_CONNECTION.println("");
+  SERIAL_CONNECTION.print("aStatusRegister: ");
+  SERIAL_CONNECTION.print(aStatusRegister);
+  SERIAL_CONNECTION.println();
+  error = sht.startPeriodicMeasurement(REPEATABILITY_MEDIUM,
+                                          MPS_TEN_PER_SECOND);
+  if (error != NO_ERROR) {
+      SERIAL_CONNECTION.print("Error trying to execute startPeriodicMeasurement(): ");
+      errorToString(error, errorMessage, sizeof errorMessage);
+      SERIAL_CONNECTION.println(errorMessage);
+      return;
+  }
 }
 
-void printBMEValues(void) {
-  if(SERIAL_CONNECTION.hasClient()){
-    LED_indicator_ok();
-    SERIAL_CONNECTION.print(">Temperature:");
-    SERIAL_CONNECTION.print(bme.readTemperature());
-    SERIAL_CONNECTION.println(" °C");
+void printShtValues(void) {
+  float aTemperature;
+  float aHumidity;
+  error = sht.blockingReadMeasurement(aTemperature, aHumidity);
 
-    SERIAL_CONNECTION.print(">Pressure:");
+#if 1 == BT_ENABLE
+  if(SERIAL_CONNECTION.hasClient() ){
+#else
+    {
+#endif
+      SERIAL_CONNECTION.print(">Temperature:");
+      SERIAL_CONNECTION.print(aTemperature);
+      SERIAL_CONNECTION.println(" °C");
 
-    SERIAL_CONNECTION.print(bme.readPressure() / 100.0F);
-    SERIAL_CONNECTION.println(" hPa");
+      SERIAL_CONNECTION.print(">Humidity:");
+      SERIAL_CONNECTION.print(aHumidity);
+      SERIAL_CONNECTION.println(" %");
 
-    SERIAL_CONNECTION.print(">Approx_altitude:");
-    SERIAL_CONNECTION.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
-    SERIAL_CONNECTION.println(" m");
+      SERIAL_CONNECTION.println();
+  }
+}
 
-    SERIAL_CONNECTION.print(">Humidity:");
-    SERIAL_CONNECTION.print(bme.readHumidity());
-    SERIAL_CONNECTION.println(" %");
+void printVEMLValues(void){
+  uint16_t red;
+  uint16_t green;
+  uint16_t blue;
+  uint16_t white;
+
+  red = veml.readReg(R_DATA_CMD_CODE);
+  green = veml.readReg(G_DATA_CMD_CODE);
+  blue = veml.readReg(B_DATA_CMD_CODE);
+  white = veml.readReg(W_DATA_CMD_CODE);
+
+#if 1 == BT_ENABLE
+  if(SERIAL_CONNECTION.hasClient() ){
+#else
+  {
+#endif
+    SERIAL_CONNECTION.print(">Red:");
+    SERIAL_CONNECTION.print(red);
+    SERIAL_CONNECTION.println(" LUX/step");
+
+    SERIAL_CONNECTION.print(">Green:");
+    SERIAL_CONNECTION.print(green);
+    SERIAL_CONNECTION.println(" LUX/step");
+
+    SERIAL_CONNECTION.print(">Blue:");
+    SERIAL_CONNECTION.print(blue);
+    SERIAL_CONNECTION.println(" LUX/step");
+
+    SERIAL_CONNECTION.print(">White:");
+    SERIAL_CONNECTION.print(white);
+    SERIAL_CONNECTION.println(" LUX/step");
 
     SERIAL_CONNECTION.println();
-  }
-  else{
-    LED_indicator_error();
   }
 }
 
