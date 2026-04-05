@@ -138,7 +138,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { classifyMqReading } from '../utils/mqSensorConfig'
 
 const props = defineProps({
@@ -166,6 +166,9 @@ const mqConfigState = ref({
   highThresholdOffset: 500
 })
 
+// Trigger to force chart recalculation when config changes
+const configUpdateTrigger = ref(0)
+
 // All known MQ sensors with display names and colours
 const ALL_SENSORS = [
   { id: 2,   name: 'Methane',        color: '#FF6B35' },
@@ -185,6 +188,9 @@ const activeSensors = computed(() => {
 })
 
 const sensorPointsById = computed(() => {
+  // Access the trigger to ensure Vue recalculates when config changes
+  void configUpdateTrigger.value
+  
   const mapped = {}
   for (const sensor of activeSensors.value) {
     mapped[sensor.id] = buildSensorPlotPoints(sensor.id)
@@ -214,6 +220,11 @@ async function loadMqConfig() {
 async function refreshMqConfig() {
   await loadMqConfig()
 }
+
+// Watch for config changes and trigger chart recalculation
+watch(() => mqConfigState.value.safeRanges, () => {
+  configUpdateTrigger.value += 1
+}, { deep: true })
 
 const SAFE_RANGES = computed(() => mqConfigState.value.safeRanges)
 const HIGH_THRESHOLD_OFFSET = computed(() => mqConfigState.value.highThresholdOffset)
