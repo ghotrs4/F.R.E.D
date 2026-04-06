@@ -38,6 +38,7 @@ const statusMessage = ref('')
 const isBatchProcessing = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
 const captureCooldown = ref(false)
+const isCapturePending = ref(false)
 const localFacingMode = ref('environment')
 const isSwitchingLocalCamera = ref(false)
 const localVideoInputCount = ref(0)
@@ -70,7 +71,7 @@ const clearTapTimer = () => {
 }
 
 const registerFrameTap = () => {
-  if (isBatchProcessing.value) return
+  if (isBatchProcessing.value || isCapturePending.value) return
 
   const now = Date.now()
   const isDoubleTap = now - lastTapTimestamp.value <= DOUBLE_TAP_WINDOW_MS
@@ -85,7 +86,7 @@ const registerFrameTap = () => {
   lastTapTimestamp.value = now
   clearTapTimer()
   tapTimer.value = setTimeout(() => {
-    if (!isBatchProcessing.value && !captureCooldown.value) {
+    if (!isBatchProcessing.value && !captureCooldown.value && !isCapturePending.value) {
       captureImage()
     }
     tapTimer.value = null
@@ -319,13 +320,20 @@ const cancelCountdown = () => {
 }
 
 const captureImage = () => {
-  if (!canvasRef.value || isBatchProcessing.value) return
+  if (!canvasRef.value || isBatchProcessing.value || isCapturePending.value || captureCooldown.value) return
+
+  isCapturePending.value = true
+  captureCooldown.value = true
 
   const canvas = canvasRef.value
   const context = canvas.getContext('2d')
   const sourceElement = cameraMode.value === 'pi' ? streamImageRef.value : videoRef.value
 
-  if (!sourceElement) return
+  if (!sourceElement) {
+    isCapturePending.value = false
+    captureCooldown.value = false
+    return
+  }
 
   const sourceWidth = cameraMode.value === 'pi'
     ? sourceElement.naturalWidth
@@ -337,7 +345,11 @@ const captureImage = () => {
   const displayWidth = sourceElement.clientWidth
   const displayHeight = sourceElement.clientHeight
 
-  if (!sourceWidth || !sourceHeight || !displayWidth || !displayHeight) return
+  if (!sourceWidth || !sourceHeight || !displayWidth || !displayHeight) {
+    isCapturePending.value = false
+    captureCooldown.value = false
+    return
+  }
 
   const guideWidth = guideBoxRef.value?.clientWidth || 300
   const guideHeight = guideBoxRef.value?.clientHeight || 300
@@ -366,11 +378,17 @@ const captureImage = () => {
           statusMessage.value = ''
         }
       }, 1500)
+      isCapturePending.value = false
+      captureCooldown.value = false
       return
     }
   } else {
     const video = videoRef.value
-    if (!video || !video.videoWidth || !video.videoHeight) return
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      isCapturePending.value = false
+      captureCooldown.value = false
+      return
+    }
   }
 
   canvas.width = cropWidth
@@ -392,12 +410,14 @@ const captureImage = () => {
       capturedBlobs.value.push(blob)
       statusMessage.value = `Item ${capturedBlobs.value.length} captured!`
       objectDetected.value = false
-      captureCooldown.value = true
       setTimeout(() => {
         captureCooldown.value = false
         statusMessage.value = ''
       }, 2000)
+    } else {
+      captureCooldown.value = false
     }
+    isCapturePending.value = false
   }, 'image/jpeg', 0.95)
 }
 
@@ -697,7 +717,7 @@ const handleKeyDown = (event) => {
     finishScanning()
   } else if (event.key === 'd' || event.key === 'D') {
     toggleDebugOverlay()
-  } else if ((event.key === 'c' || event.key === 'C') && !isBatchProcessing.value && !captureCooldown.value) {
+  } else if ((event.key === 'c' || event.key === 'C') && !isBatchProcessing.value && !captureCooldown.value && !isCapturePending.value) {
     captureImage()
   }
 }
