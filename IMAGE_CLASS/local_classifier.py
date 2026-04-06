@@ -32,6 +32,21 @@ _model       = None
 _class_names = None
 _load_error  = None
 
+_LABEL_ALIASES = {
+    'bellpepper': 'bell pepper',
+}
+
+
+def _format_label(raw_label):
+    """Convert raw class labels to readable text for API responses."""
+    label = str(raw_label).strip().replace('_', ' ').replace('-', ' ')
+    condensed = label.replace(' ', '').lower()
+    if condensed.startswith('rotten') and len(condensed) > len('rotten'):
+        return f"rotten {condensed[len('rotten'):]}"
+    if condensed in _LABEL_ALIASES:
+        return _LABEL_ALIASES[condensed]
+    return label
+
 
 def _load_class_names():
     """Load Food-101 class names from the dataset metadata file if present."""
@@ -133,11 +148,11 @@ def predict(pil_image):
         top5_prob, top5_idx = torch.topk(probs, 5)
 
     return {
-        'predicted_class': _class_names[idx.item()].replace('_', ' '),
+        'predicted_class': _format_label(_class_names[idx.item()]),
         'confidence':      round(conf.item() * 100, 2),
         'top5': [
             {
-                'class':      _class_names[i.item()].replace('_', ' '),
+                'class':      _format_label(_class_names[i.item()]),
                 'confidence': round(p.item() * 100, 2),
             }
             for i, p in zip(top5_idx, top5_prob)
