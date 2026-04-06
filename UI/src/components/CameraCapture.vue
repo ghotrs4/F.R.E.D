@@ -42,6 +42,7 @@ const localFacingMode = ref('environment')
 const isSwitchingLocalCamera = ref(false)
 const localVideoInputCount = ref(0)
 const debugCanvasRef = ref(null)
+const guideBoxRef = ref(null)
 const showDebugOverlay = ref(false)
 const tapTimer = ref(null)
 const lastTapTimestamp = ref(0)
@@ -322,6 +323,39 @@ const captureImage = () => {
 
   const canvas = canvasRef.value
   const context = canvas.getContext('2d')
+  const sourceElement = cameraMode.value === 'pi' ? streamImageRef.value : videoRef.value
+
+  if (!sourceElement) return
+
+  const sourceWidth = cameraMode.value === 'pi'
+    ? sourceElement.naturalWidth
+    : sourceElement.videoWidth
+  const sourceHeight = cameraMode.value === 'pi'
+    ? sourceElement.naturalHeight
+    : sourceElement.videoHeight
+
+  const displayWidth = sourceElement.clientWidth
+  const displayHeight = sourceElement.clientHeight
+
+  if (!sourceWidth || !sourceHeight || !displayWidth || !displayHeight) return
+
+  const guideWidth = guideBoxRef.value?.clientWidth || 300
+  const guideHeight = guideBoxRef.value?.clientHeight || 300
+  const guideLeft = (displayWidth - guideWidth) / 2
+  const guideTop = (displayHeight - guideHeight) / 2
+
+  const scaleX = sourceWidth / displayWidth
+  const scaleY = sourceHeight / displayHeight
+
+  let cropX = Math.round(guideLeft * scaleX)
+  let cropY = Math.round(guideTop * scaleY)
+  let cropWidth = Math.round(guideWidth * scaleX)
+  let cropHeight = Math.round(guideHeight * scaleY)
+
+  cropX = Math.max(0, Math.min(cropX, sourceWidth - 1))
+  cropY = Math.max(0, Math.min(cropY, sourceHeight - 1))
+  cropWidth = Math.max(1, Math.min(cropWidth, sourceWidth - cropX))
+  cropHeight = Math.max(1, Math.min(cropHeight, sourceHeight - cropY))
 
   if (cameraMode.value === 'pi') {
     const streamImage = streamImageRef.value
@@ -334,18 +368,24 @@ const captureImage = () => {
       }, 1500)
       return
     }
-
-    canvas.width = streamImage.naturalWidth
-    canvas.height = streamImage.naturalHeight
-    context.drawImage(streamImage, 0, 0, canvas.width, canvas.height)
   } else {
     const video = videoRef.value
     if (!video || !video.videoWidth || !video.videoHeight) return
-
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
   }
+
+  canvas.width = cropWidth
+  canvas.height = cropHeight
+  context.drawImage(
+    sourceElement,
+    cropX,
+    cropY,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    cropWidth,
+    cropHeight
+  )
   
   canvas.toBlob((blob) => {
     if (blob) {
@@ -744,7 +784,11 @@ onUnmounted(() => {
           <canvas ref="debugCanvasRef" class="debug-overlay"></canvas>
           
           <div class="camera-guide">
-            <div class="guide-box" :class="{ 'detected': objectDetected, 'processing': isBatchProcessing }">
+            <div
+              ref="guideBoxRef"
+              class="guide-box"
+              :class="{ 'detected': objectDetected, 'processing': isBatchProcessing }"
+            >
             </div>
             <div v-if="isCapturing" class="progress-bar-container">
               <div class="progress-bar"></div>
