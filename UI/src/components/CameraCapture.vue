@@ -816,6 +816,7 @@ onUnmounted(() => {
             <p v-if="isBatchProcessing" class="status-message">Classifying {{ capturedBlobs.length }} item(s)...</p>
             <p v-else-if="statusMessage" class="status-message">{{ statusMessage }}</p>
             <p v-else-if="isCapturing">Capturing...</p>
+            <p v-else-if="isCapturePending">Saving capture...</p>
             <p v-else>Position food item in the frame</p>
             <p v-if="capturedBlobs.length > 0 && !isBatchProcessing" class="items-count">{{ capturedBlobs.length }} item(s) captured</p>
           </div>
