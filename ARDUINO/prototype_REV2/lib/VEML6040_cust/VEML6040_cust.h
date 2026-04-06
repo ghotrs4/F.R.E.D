@@ -17,34 +17,34 @@
  * <https://www.gnu.org/licenses/>.
  */
 
-#ifndef main
-#define main
+#ifndef VEML6040_cust
 
-#include <Arduino.h>
+#define VEML6040_cust           1
 
-#define ANALOG_MULTIPLEXER_S0  (uint8_t)12
-#define ANALOG_MULTIPLEXER_S1  (uint8_t)13
-#define ANALOG_MULTIPLEXER_S2  (uint8_t)14
+#include <Wire.h>
 
-#define ADC_IN                 (uint8_t)36
+#define VEML_SLAVE_ADDR         (uint8_t)0x10
+#define CONF_CMD_CODE           (uint8_t)0x0
+#define SD_CONF_REG             (uint8_t)0x1
+#define AF_CONF_REG             (uint8_t)0x2
 
-#define SDA0_PIN                (uint8_t)21
-#define SCL0_PIN                (uint8_t)22
+#define TRIG_CONF_REG           (uint8_t)0x4
+#define TRIG_CONF_REG_LEN       (uint8_t)0x3
 
-#define SDA1_PIN                (uint8_t)18
-#define SCL1_PIN                (uint8_t)19 
+#define R_DATA_CMD_CODE         (uint8_t)0x08
+#define G_DATA_CMD_CODE         (uint8_t)0x09
+#define B_DATA_CMD_CODE         (uint8_t)0x0a
+#define W_DATA_CMD_CODE         (uint8_t)0x0b
 
-#define TEMP_SENSE_EN           (uint8_t)15
-#define SEALEVELPRESSURE_HPA   (1013.25)
+class VEML{
 
-#define BT_ENABLE              0
+    private:
+        TwoWire* wire; 
+    public:
+        VEML(uint8_t sda, uint8_t scl);
+        uint16_t readReg(uint8_t reg);
+        size_t writeReg(uint8_t reg, uint8_t val);   
+};
 
-void initSerial(void);
-void initSHT(void);
-void initOpt(void);
-void printShtValues(void);
-void printOptValues(void);
-uint16_t readADC(void);
-void setMultiplexer(short channel);
 
 #endif

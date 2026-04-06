@@ -1,3 +1,22 @@
+/**
+ * Copyright (C) 2026 Isaac Thomas
+ * Operations and timing according to the Vishay Datasheet
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
 #include <main.h>
 #include <Arduino.h>
 #include <Wire.h>
@@ -5,8 +24,8 @@
 
 #include "BluetoothSerial.h"
 #include "BLEDevice.h"
-#include <VEML6040_cust.h>
 #include <SensirionI2cSht3x.h>
+#include <opt3004.h>
 
 #if 1 == BT_ENABLE
 #define SERIAL_CONNECTION                 SerialBT
@@ -29,7 +48,7 @@ const uint8_t sensorMapping[8] = {
 };
 
 //I2C Globals
-VEML veml(SDA0_PIN, SCL0_PIN);
+opt3004 opt(&Wire);
 
 SensirionI2cSht3x sht;
 static char errorMessage[64];
@@ -57,21 +76,10 @@ void setup(void) {
   /*...*/
 
   //init I2C buses
-  Wire.begin(SDA0_PIN, SCL0_PIN, 100000);    // VEML on first I2C bus
-  
-  Wire.beginTransmission(VEML_SLAVE_ADDR);
-  uint8_t vemlProbe = Wire.endTransmission();
-  if (vemlProbe == 0) {
-    log_e("VEML sensor active on I2C.");
-  }
-  else{
-    log_e("VEML I2C probe failed with code: %u", vemlProbe);
-    log_e("Unable to establish VEML sensor on I2C.");
-    while(1){}
-  }
-  
+  opt.begin(SDA0_PIN, SCL0_PIN);      //OPT3004 on Wire0
+  initOpt();
 
-  Wire1.begin(SDA1_PIN, SCL1_PIN);   // SHT on Wire1
+  Wire1.begin(SDA1_PIN, SCL1_PIN);    // SHT on Wire1
   initSHT();
 }
 
@@ -98,7 +106,7 @@ void loop(void) {
   printShtValues();
 
   //Task 3: Get colour sensor reading, output raw value (allow tuning on host side)
-  printVEMLValues();
+  printOptValues();
 }
 
 
@@ -116,6 +124,27 @@ void initSerial(void){
   }
   SERIAL_CONNECTION.println("SERIAL_CONNECTION started. Firmware 0.1 for Prototype REV2");    
 #endif
+}
+
+void initOpt(void){
+  uint16_t config = 0b1100011000000000;
+  opt.WRITE_REG(CONFIGURATION_REG, config);
+  config = opt.READ_REG(CONFIGURATION_REG); //read written register to validate
+
+  uint16_t manufacturerID = opt.READ_REG(MANUFACTURER_ID_REG);
+  uint16_t deviceID = opt.READ_REG(DEVICE_ID_REG);
+#if 1 == BT_ENABLE
+  if(SERIAL_CONNECTION.hasClient() ){
+#else
+    {
+#endif
+      SERIAL_CONNECTION.printf("OPT3040 manufacturer ID: 0x%x", manufacturerID);
+      SERIAL_CONNECTION.println();
+      SERIAL_CONNECTION.printf("OPT3040 device ID: 0x%x", deviceID);
+      SERIAL_CONNECTION.println();
+      SERIAL_CONNECTION.printf("OPT3040 current config: 0x%x", config);
+      SERIAL_CONNECTION.println();
+    }
 }
 
 void initSHT(void){
@@ -169,39 +198,17 @@ void printShtValues(void) {
   }
 }
 
-void printVEMLValues(void){
-  uint16_t red;
-  uint16_t green;
-  uint16_t blue;
-  uint16_t white;
-
-  red = veml.readReg(R_DATA_CMD_CODE);
-  green = veml.readReg(G_DATA_CMD_CODE);
-  blue = veml.readReg(B_DATA_CMD_CODE);
-  white = veml.readReg(W_DATA_CMD_CODE);
+void printOptValues(void){
+  float data = opt.getResult();
 
 #if 1 == BT_ENABLE
   if(SERIAL_CONNECTION.hasClient() ){
 #else
   {
 #endif
-    SERIAL_CONNECTION.print(">Red:");
-    SERIAL_CONNECTION.print(red);
-    SERIAL_CONNECTION.println(" LUX/step");
-
-    SERIAL_CONNECTION.print(">Green:");
-    SERIAL_CONNECTION.print(green);
-    SERIAL_CONNECTION.println(" LUX/step");
-
-    SERIAL_CONNECTION.print(">Blue:");
-    SERIAL_CONNECTION.print(blue);
-    SERIAL_CONNECTION.println(" LUX/step");
-
-    SERIAL_CONNECTION.print(">White:");
-    SERIAL_CONNECTION.print(white);
-    SERIAL_CONNECTION.println(" LUX/step");
-
-    SERIAL_CONNECTION.println();
+      SERIAL_CONNECTION.print(">Ambient_light_intensity:");
+      SERIAL_CONNECTION.print(data);
+      SERIAL_CONNECTION.println(" LUX");
   }
 }
 
