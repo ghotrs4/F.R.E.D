@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2026 Isaac Thomas
+ * Copyright (C) 2026 Sarb, Huner, Charlotte and Isaac
  * Operations and timing according to the Vishay Datasheet
  * 
  * This program is free software; you can redistribute it and/or
@@ -37,7 +37,7 @@
 #define TEMP_SENSE_EN           (uint8_t)15
 #define SEALEVELPRESSURE_HPA   (1013.25)
 
-#define BT_ENABLE              0
+#define BT_ENABLE              1
 
 void initSerial(void);
 void initSHT(void);

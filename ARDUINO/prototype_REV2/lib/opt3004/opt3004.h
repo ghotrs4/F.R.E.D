@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2026 Isaac Thomas
+ * Copyright (C) 2026 Sarb, Huner, Charlotte and Isaac
  * Operations and timing according to the TI Datasheet
  * 
  * This program is free software; you can redistribute it and/or
