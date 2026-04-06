@@ -1,5 +1,6 @@
 /**
- * Copyright (C) 2026 Isaac Thomas
+ * Custom driver for the OPT3004 TI light sensor
+ * Copyright (C) 2026 Sarb, Huner, Charlotte and Isaac
  * Operations and timing according to the TI Datasheet
  * 
  * This program is free software; you can redistribute it and/or
@@ -42,14 +43,14 @@ uint16_t opt3004::READ_REG(uint8_t reg){
     uint16_t val = 0;
 
     wire->beginTransmission(opt3004_I2C_ADDR);
-    wire->write(reg);
+    wire->write(reg); //set the appropraite register to read
     wire->endTransmission(false);
 
     wire->requestFrom(opt3004_I2C_ADDR, 2U); //always reading two bytes of data
 
     if(wire->available()){
-        val |= (wire->read()<<8);
-        val |= wire->read();
+        val |= (wire->read()<<8);//read MSBs
+        val |= wire->read(); //read LSBs
     }
 
     return val;
@@ -71,8 +72,8 @@ void opt3004::WRITE_REG(uint8_t reg, uint16_t val){
 
 float opt3004::getResult(void){
     uint16_t val = this->READ_REG(RESULT_REG);
-    float data = 0.01;
-    data *= 2U<<(val>>12);
-    data *= val & 0xfff;
+    float data = 0.01; //starting step size
+    data *= 2U<<(val>>12); //multiply by exponent bits
+    data *= val & 0xfff; //add mantissa bits contribution
     return data;
 }

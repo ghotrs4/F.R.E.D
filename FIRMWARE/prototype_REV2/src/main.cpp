@@ -1,5 +1,6 @@
 /**
- * Copyright (C) 2026 Isaac Thomas
+ * Main program for the F.R.E.D. Prototype REV2 custom board
+ * Copyright (C) 2026 Sarb, Huner, Charlotte and Isaac
  * Operations and timing according to the Vishay Datasheet
  * 
  * This program is free software; you can redistribute it and/or
@@ -127,7 +128,7 @@ void initSerial(void){
 }
 
 void initOpt(void){
-  uint16_t config = 0b1100011000000000;
+  uint16_t config = 0b1100011000000000; //set full-range, disable sensor shutdown
   opt.WRITE_REG(CONFIGURATION_REG, config);
   config = opt.READ_REG(CONFIGURATION_REG); //read written register to validate
 
@@ -163,7 +164,7 @@ void initSHT(void){
       SERIAL_CONNECTION.println(errorMessage);
       return;
   }
-  SERIAL_CONNECTION.print("aStatusRegister: ");
+  SERIAL_CONNECTION.print("SHT30 aStatusRegister: ");
   SERIAL_CONNECTION.print(aStatusRegister);
   SERIAL_CONNECTION.println();
   error = sht.startPeriodicMeasurement(REPEATABILITY_MEDIUM,

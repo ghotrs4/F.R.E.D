@@ -1,5 +1,6 @@
 /**
- * Copyright (C) 2026 Isaac Thomas
+ * Custom driver for the VEML6040 Vishay colour sensor - UNTESTED
+ * Copyright (C) 2026 Sarb, Huner, Charlotte and Isaac
  * Operations and timing according to the Vishay Datasheet
  * 
  * This program is free software; you can redistribute it and/or
