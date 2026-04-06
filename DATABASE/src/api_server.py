@@ -2330,7 +2330,8 @@ def proxy_camera_stream():
         upstream = requests.get(
             PI_CAMERA_STREAM_URL,
             stream=True,
-            timeout=(5, 60),
+            # Keep a short connect timeout, but allow long-lived stream reads.
+            timeout=(5, None),
             headers={'Accept': 'multipart/x-mixed-replace'}
         )
         upstream.raise_for_status()
