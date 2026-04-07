@@ -988,6 +988,7 @@ onUnmounted(() => {
   height: auto;
   border-radius: 8px;
   display: block;
+  transform: scaleX(-1);
 }
 
 .debug-overlay {
@@ -998,6 +999,7 @@ onUnmounted(() => {
   height: 100%;
   pointer-events: none;
   border-radius: 8px;
+  transform: scaleX(-1);
 }
 
 .camera-guide {
