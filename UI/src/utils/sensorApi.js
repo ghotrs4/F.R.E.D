@@ -21,9 +21,61 @@ export async function getSensorData() {
     return {
       temperature: 4.0,
       humidity: 50.0,
+      ambient_light_intensity: 0.0,
+      auto_door_enabled: false,
+      auto_door_lux_threshold: 0.0,
+      auto_door_lux_trigger_offset: 50.0,
       connected: false
     }
   }
+}
+
+/**
+ * Fetch persisted lux-door auto open/close config.
+ */
+export async function getLuxDoorConfig() {
+  const response = await fetch(`${API_BASE_URL}/sensor/lux-door/config`)
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.error || `HTTP error! status: ${response.status}`)
+  }
+  return payload
+}
+
+/**
+ * Update persisted lux-door config.
+ * @param {{enabled?: boolean, luxThreshold?: number, luxTriggerOffset?: number}} patch
+ */
+export async function updateLuxDoorConfig(patch = {}) {
+  const response = await fetch(`${API_BASE_URL}/sensor/lux-door/config`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(patch)
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.error || `HTTP error! status: ${response.status}`)
+  }
+  return payload
+}
+
+/**
+ * Calibrate closed-door lux baseline using the current live ambient reading.
+ */
+export async function calibrateLuxDoorThreshold() {
+  const response = await fetch(`${API_BASE_URL}/sensor/lux-door/calibrate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.error || `HTTP error! status: ${response.status}`)
+  }
+  return payload
 }
 
 /**

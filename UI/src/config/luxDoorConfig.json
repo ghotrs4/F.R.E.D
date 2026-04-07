@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "luxThreshold": 0.32,
+  "luxTriggerOffset": 5.0
+}

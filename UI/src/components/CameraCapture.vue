@@ -3,7 +3,7 @@
 -->
 
 <script setup>
-import { ref, shallowRef, onMounted, onUnmounted, computed } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision'
 import { apiUrl } from '../utils/apiBase'
 
@@ -16,6 +16,10 @@ const props = defineProps({
   useLocalCamera: {
     type: Boolean,
     default: false
+  },
+  autoFinishSignal: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -721,6 +725,15 @@ const handleKeyDown = (event) => {
     captureImage()
   }
 }
+
+watch(
+  () => props.autoFinishSignal,
+  (newValue, oldValue) => {
+    if (newValue === oldValue) return
+    if (isBatchProcessing.value) return
+    finishScanning()
+  }
+)
 
 onMounted(async () => {
   await refreshVideoInputCount()

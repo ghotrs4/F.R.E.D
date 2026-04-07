@@ -11,6 +11,7 @@ import appLogo from './assets/fred.svg'
 import fredThinkAnimation from './assets/fred_think.json'
 import { loadFoodsFromCSV } from './utils/csvParser'
 import { apiUrl } from './utils/apiBase'
+import { getSensorData, getLuxDoorConfig, updateLuxDoorConfig } from './utils/sensorApi'
 
 const router = useRouter()
 const route = useRoute()
@@ -31,6 +32,14 @@ const classificationAnimInstance = shallowRef(null)
 const imageBlobCache = ref({})    // food name (lowercase) -> Blob, for in-session compare
 const localResultCache = ref({})  // food name (lowercase) -> local model result, for in-session compare
 const outgoingItems = ref([])
+const autoDoorEnabled = ref(false)
+const autoDoorLuxThreshold = ref(0.0)
+const autoDoorLuxTriggerOffset = ref(50.0)
+const ambientLightIntensity = ref(0.0)
+const previousAmbientLightIntensity = ref(null)
+const autoDoorOpenedCurrentScan = ref(false)
+const autoDoorFinishSignal = ref(0)
+const sensorPollInterval = ref(null)
 
 const FULLSCREEN_PREF_KEY = 'fred_fullscreen_enabled'
 const GEMINI_ENABLED_PREF_KEY = 'fred_gemini_enabled'
@@ -80,6 +89,97 @@ const setUseLocalCamera = (enabled) => {
   try {
     localStorage.setItem(USE_LOCAL_CAMERA_PREF_KEY, useLocalCamera.value ? 'true' : 'false')
   } catch {}
+}
+
+const setAutoDoorEnabled = async (enabled) => {
+  const requested = Boolean(enabled)
+  try {
+    const response = await updateLuxDoorConfig({ enabled: requested })
+    const config = response?.config || {}
+    autoDoorEnabled.value = Boolean(config.enabled)
+    autoDoorLuxThreshold.value = Number(config.luxThreshold ?? autoDoorLuxThreshold.value)
+    autoDoorLuxTriggerOffset.value = Number(config.luxTriggerOffset ?? autoDoorLuxTriggerOffset.value)
+  } catch (error) {
+    console.error('Failed to update auto door enabled state:', error)
+  }
+}
+
+const setAutoDoorLuxTriggerOffset = async (offset) => {
+  const parsedOffset = Number(offset)
+  if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
+    return
+  }
+  try {
+    const response = await updateLuxDoorConfig({ luxTriggerOffset: parsedOffset })
+    const config = response?.config || {}
+    autoDoorEnabled.value = Boolean(config.enabled ?? autoDoorEnabled.value)
+    autoDoorLuxThreshold.value = Number(config.luxThreshold ?? autoDoorLuxThreshold.value)
+    autoDoorLuxTriggerOffset.value = Number(config.luxTriggerOffset ?? parsedOffset)
+  } catch (error) {
+    console.error('Failed to update lux trigger offset:', error)
+  }
+}
+
+const handleSensorDrivenDoorFlow = (currentLuxRaw) => {
+  const currentLux = Number(currentLuxRaw)
+  if (!Number.isFinite(currentLux)) {
+    return
+  }
+
+  const triggerThreshold = Number(autoDoorLuxThreshold.value) + Number(autoDoorLuxTriggerOffset.value)
+  const previousLux = previousAmbientLightIntensity.value
+  const crossedUp = previousLux === null
+    ? currentLux >= triggerThreshold
+    : previousLux < triggerThreshold && currentLux >= triggerThreshold
+  const crossedDown = previousLux !== null && previousLux >= triggerThreshold && currentLux < triggerThreshold
+
+  if (!autoDoorEnabled.value) {
+    previousAmbientLightIntensity.value = currentLux
+    autoDoorOpenedCurrentScan.value = false
+    return
+  }
+
+  if (crossedUp && !showCameraPopup.value && !showResultsPopup.value && !isClassifying.value) {
+    autoDoorOpenedCurrentScan.value = true
+    openCameraPopup()
+  }
+
+  if (crossedDown && autoDoorOpenedCurrentScan.value && showCameraPopup.value) {
+    autoDoorOpenedCurrentScan.value = false
+    autoDoorFinishSignal.value += 1
+  }
+
+  previousAmbientLightIntensity.value = currentLux
+}
+
+const pollSensorState = async () => {
+  try {
+    const data = await getSensorData()
+    ambientLightIntensity.value = Number(data?.ambient_light_intensity ?? 0.0)
+    autoDoorEnabled.value = Boolean(data?.auto_door_enabled ?? autoDoorEnabled.value)
+    autoDoorLuxThreshold.value = Number(data?.auto_door_lux_threshold ?? autoDoorLuxThreshold.value)
+    autoDoorLuxTriggerOffset.value = Number(
+      data?.auto_door_lux_trigger_offset ?? autoDoorLuxTriggerOffset.value
+    )
+    handleSensorDrivenDoorFlow(ambientLightIntensity.value)
+  } catch (error) {
+    console.error('Failed to poll sensor state:', error)
+  }
+}
+
+const startSensorPolling = () => {
+  stopSensorPolling()
+  pollSensorState()
+  sensorPollInterval.value = window.setInterval(() => {
+    pollSensorState()
+  }, 1000)
+}
+
+const stopSensorPolling = () => {
+  if (sensorPollInterval.value) {
+    clearInterval(sensorPollInterval.value)
+    sensorPollInterval.value = null
+  }
 }
 
 const syncFullscreenState = () => {
@@ -274,10 +374,12 @@ const openCameraPopup = () => {
 
 const closeCameraPopup = () => {
   showCameraPopup.value = false
+  autoDoorOpenedCurrentScan.value = false
 }
 
 const handleFinishScanning = async (items) => {
   showCameraPopup.value = false
+  autoDoorOpenedCurrentScan.value = false
   
   if (items.length === 0) {
     console.warn('[scan] No predictions returned from batch endpoint.')
@@ -710,6 +812,16 @@ onMounted(() => {
 
   window.addEventListener('keydown', handleKeyDown)
   document.addEventListener('fullscreenchange', syncFullscreenState)
+  getLuxDoorConfig()
+    .then((config) => {
+      autoDoorEnabled.value = Boolean(config?.enabled)
+      autoDoorLuxThreshold.value = Number(config?.luxThreshold ?? 0.0)
+      autoDoorLuxTriggerOffset.value = Number(config?.luxTriggerOffset ?? 50.0)
+    })
+    .catch((error) => {
+      console.error('Failed to load lux door config:', error)
+    })
+  startSensorPolling()
 })
 
 onUnmounted(() => {
@@ -717,6 +829,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   removeFullscreenRestoreListeners()
+  stopSensorPolling()
 })
 </script>
 
@@ -725,8 +838,13 @@ onUnmounted(() => {
     <AppSidebar
       :use-local-camera="useLocalCamera"
       :gemini-enabled="geminiEnabled"
+      :auto-door-enabled="autoDoorEnabled"
+      :auto-door-lux-trigger-offset="autoDoorLuxTriggerOffset"
+      :current-lux="ambientLightIntensity"
       @toggle-local-camera="setUseLocalCamera"
       @toggle-gemini="setGeminiEnabled"
+      @toggle-auto-door="setAutoDoorEnabled"
+      @update-lux-trigger-offset="setAutoDoorLuxTriggerOffset"
     />
     <div class="content-wrapper">
       <SidebarTrigger class="sidebar-trigger" />
@@ -819,6 +937,7 @@ onUnmounted(() => {
       v-if="showCameraPopup"
       :gemini-enabled="geminiEnabled"
       :use-local-camera="useLocalCamera"
+      :auto-finish-signal="autoDoorFinishSignal"
       @close="closeCameraPopup"
       @finish="handleFinishScanning"
       @classifying="handleClassifying"

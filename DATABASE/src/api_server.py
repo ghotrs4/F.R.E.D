@@ -89,6 +89,19 @@ def _coerce_float(value, default):
         return default
 
 
+def _coerce_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    value_text = str(value).strip().lower()
+    if value_text in ('1', 'true', 'yes', 'on'):
+        return True
+    if value_text in ('0', 'false', 'no', 'off'):
+        return False
+    return default
+
+
 def _normalize_mq_readings(raw_readings):
     normalized = {}
     if not isinstance(raw_readings, dict):
@@ -116,11 +129,13 @@ def _get_sensor_snapshot():
             connected = bool(payload.get('connected', False))
             temperature = _coerce_float(payload.get('temperature'), 4.0)
             humidity = _coerce_float(payload.get('humidity'), 50.0)
+            ambient_light_intensity = _coerce_float(payload.get('ambient_light_intensity'), 0.0)
             mq_readings = _normalize_mq_readings(payload.get('mq_readings', {}))
             return {
                 'connected': connected,
                 'temperature': temperature,
                 'humidity': humidity,
+                'ambient_light_intensity': ambient_light_intensity,
                 'mq_readings': mq_readings,
             }
         except Exception as e:
@@ -129,6 +144,7 @@ def _get_sensor_snapshot():
                 'connected': False,
                 'temperature': 4.0,
                 'humidity': 50.0,
+                'ambient_light_intensity': 0.0,
                 'mq_readings': {},
             }
 
@@ -143,6 +159,7 @@ def _get_sensor_snapshot():
         'connected': connected,
         'temperature': sensor.get_temperature(),
         'humidity': sensor.get_humidity(),
+        'ambient_light_intensity': sensor.get_ambient_light_intensity(),
         'mq_readings': mq_readings,
     }
 
@@ -459,6 +476,14 @@ MQ_HISTORY_12H_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'mq_
 MQ_CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), '..', '..', 'UI', 'src', 'config', 'mqSensorConfig.json'
 )
+_LUX_DOOR_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), '..', '..', 'UI', 'src', 'config', 'luxDoorConfig.json'
+)
+_DEFAULT_LUX_DOOR_CONFIG = {
+    'enabled': False,
+    'luxThreshold': 0.0,
+    'luxTriggerOffset': 50.0,
+}
 
 _DB_FIELDNAMES = [
     'item_id',
@@ -503,6 +528,49 @@ _csv_lock = threading.Lock()
 _history_lock = threading.Lock()
 _last_history_rollup_at: datetime | None = None
 _history_sampler_lock_fd: int | None = None
+
+
+def _normalize_lux_door_config(raw_config):
+    config = dict(_DEFAULT_LUX_DOOR_CONFIG)
+    if isinstance(raw_config, dict):
+        config['enabled'] = _coerce_bool(raw_config.get('enabled'), config['enabled'])
+        config['luxThreshold'] = _coerce_float(raw_config.get('luxThreshold'), config['luxThreshold'])
+        config['luxTriggerOffset'] = _coerce_float(
+            raw_config.get('luxTriggerOffset'),
+            config['luxTriggerOffset'],
+        )
+    config['luxTriggerOffset'] = max(0.0, config['luxTriggerOffset'])
+    return config
+
+
+def _load_lux_door_config():
+    if not os.path.exists(_LUX_DOOR_CONFIG_PATH):
+        return dict(_DEFAULT_LUX_DOOR_CONFIG)
+    try:
+        with open(_LUX_DOOR_CONFIG_PATH, 'r', encoding='utf-8') as file:
+            return _normalize_lux_door_config(json.load(file))
+    except Exception:
+        return dict(_DEFAULT_LUX_DOOR_CONFIG)
+
+
+def _save_lux_door_config(config):
+    normalized = _normalize_lux_door_config(config)
+    os.makedirs(os.path.dirname(_LUX_DOOR_CONFIG_PATH), exist_ok=True)
+    with open(_LUX_DOOR_CONFIG_PATH, 'w', encoding='utf-8') as file:
+        json.dump(normalized, file, indent=2)
+        file.write('\n')
+    return normalized
+
+
+def _get_lux_door_config():
+    return _load_lux_door_config()
+
+
+def _update_lux_door_config(patch):
+    current = _get_lux_door_config()
+    if isinstance(patch, dict):
+        current.update(patch)
+    return _save_lux_door_config(current)
 
 
 def _csv_has_data_rows(path: str) -> bool:
@@ -2389,14 +2457,65 @@ def get_sensor_data():
     snapshot = _get_sensor_snapshot()
     temperature = snapshot['temperature']
     humidity = snapshot['humidity']
+    ambient_light_intensity = snapshot.get('ambient_light_intensity', 0.0)
     connected = snapshot['connected']
     mq_readings = snapshot['mq_readings']
+    lux_door_config = _get_lux_door_config()
 
     return jsonify({
         'temperature': temperature,
         'humidity': humidity,
+        'ambient_light_intensity': ambient_light_intensity,
         'connected': connected,
-        'mq_readings': mq_readings
+        'mq_readings': mq_readings,
+        'auto_door_enabled': bool(lux_door_config.get('enabled', False)),
+        'auto_door_lux_threshold': float(lux_door_config.get('luxThreshold', 0.0)),
+        'auto_door_lux_trigger_offset': float(lux_door_config.get('luxTriggerOffset', 50.0)),
+    })
+
+
+@app.route('/api/sensor/lux-door/config', methods=['GET'])
+def get_lux_door_config():
+    config = _get_lux_door_config()
+    return jsonify({
+        'enabled': bool(config.get('enabled', False)),
+        'luxThreshold': float(config.get('luxThreshold', 0.0)),
+        'luxTriggerOffset': float(config.get('luxTriggerOffset', 50.0)),
+    })
+
+
+@app.route('/api/sensor/lux-door/config', methods=['POST'])
+def update_lux_door_config():
+    payload = request.get_json(silent=True) or {}
+    patch = {}
+    if 'enabled' in payload:
+        patch['enabled'] = _coerce_bool(payload.get('enabled'), False)
+    if 'luxThreshold' in payload:
+        patch['luxThreshold'] = _coerce_float(payload.get('luxThreshold'), 0.0)
+    if 'luxTriggerOffset' in payload:
+        patch['luxTriggerOffset'] = max(0.0, _coerce_float(payload.get('luxTriggerOffset'), 50.0))
+
+    updated = _update_lux_door_config(patch)
+    return jsonify({
+        'message': 'Lux door config updated',
+        'config': updated,
+    })
+
+
+@app.route('/api/sensor/lux-door/calibrate', methods=['POST'])
+def calibrate_lux_door_threshold():
+    snapshot = _get_sensor_snapshot()
+    ambient_light = _coerce_float(snapshot.get('ambient_light_intensity'), 0.0)
+    config = _update_lux_door_config({'luxThreshold': ambient_light})
+
+    lux_threshold = float(config.get('luxThreshold', 0.0))
+    lux_trigger_offset = float(config.get('luxTriggerOffset', 50.0))
+    return jsonify({
+        'message': 'Lux door calibration updated',
+        'luxThreshold': lux_threshold,
+        'luxTriggerOffset': lux_trigger_offset,
+        'luxTriggerThreshold': lux_threshold + lux_trigger_offset,
+        'ambientLightLux': ambient_light,
     })
 
 

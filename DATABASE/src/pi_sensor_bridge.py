@@ -23,6 +23,7 @@ def sensor_data():
     return jsonify({
         "temperature": sensor.get_temperature(),
         "humidity": sensor.get_humidity(),
+        "ambient_light_intensity": sensor.get_ambient_light_intensity(),
         "connected": connected,
         "mq_readings": mq_readings
     })

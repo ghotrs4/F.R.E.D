@@ -1,9 +1,9 @@
 <script setup>
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch, computed } from 'vue'
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar'
 import { Home, Package } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
-import { calibrateMqSensors } from '../utils/sensorApi'
+import { calibrateMqSensors, calibrateLuxDoorThreshold } from '../utils/sensorApi'
 
 const DEV_SETTINGS_PASSWORD = (import.meta.env.VITE_DEV_SETTINGS_PASSWORD || 'fred-dev').trim()
 
@@ -15,10 +15,22 @@ const props = defineProps({
   geminiEnabled: {
     type: Boolean,
     default: true
+  },
+  autoDoorEnabled: {
+    type: Boolean,
+    default: false
+  },
+  autoDoorLuxTriggerOffset: {
+    type: Number,
+    default: 50
+  },
+  currentLux: {
+    type: Number,
+    default: 0
   }
 })
 
-const emit = defineEmits(['toggle-gemini', 'toggle-local-camera'])
+const emit = defineEmits(['toggle-gemini', 'toggle-local-camera', 'toggle-auto-door', 'update-lux-trigger-offset'])
 
 const developerAuthMessage = ref('')
 const showPasswordModal = ref(false)
@@ -112,8 +124,45 @@ const handleGeminiToggle = async (event) => {
   emit('toggle-gemini', requestedValue)
 }
 
+const handleAutoDoorToggle = async (event) => {
+  const requestedValue = event.target.checked
+  const authed = await requestDeveloperPassword('toggle auto door open/close')
+  if (!authed) {
+    event.target.checked = props.autoDoorEnabled
+    return
+  }
+  emit('toggle-auto-door', requestedValue)
+}
+
 const calibratingMq = ref(false)
 const calibrationStatus = ref('')
+const calibratingLuxDoor = ref(false)
+const luxDoorCalibrationBaseline = ref(null)
+const luxDoorCalibrationError = ref('')
+const luxTriggerOffsetInput = ref(String(props.autoDoorLuxTriggerOffset ?? 50))
+
+watch(
+  () => props.autoDoorLuxTriggerOffset,
+  (value) => {
+    luxTriggerOffsetInput.value = String(Number.isFinite(Number(value)) ? Number(value) : 50)
+  },
+  { immediate: true }
+)
+
+const luxDoorCalibrationStatus = computed(() => {
+  if (luxDoorCalibrationError.value) {
+    return luxDoorCalibrationError.value
+  }
+  if (luxDoorCalibrationBaseline.value === null) {
+    return ''
+  }
+
+  const baseline = Number(luxDoorCalibrationBaseline.value) || 0
+  const currentLux = Number(props.currentLux ?? baseline)
+  const triggerOffset = Number(props.autoDoorLuxTriggerOffset ?? 50)
+  const triggerThreshold = baseline + triggerOffset
+  return `Closed baseline ${baseline.toFixed(2)} LUX (current ${currentLux.toFixed(2)}). Trigger opens at ${triggerThreshold.toFixed(2)} LUX (+${triggerOffset.toFixed(2)}).`
+})
 
 const handleCalibrateMq = async () => {
   const authed = await requestDeveloperPassword('recalibrate MQ sensors')
@@ -131,6 +180,43 @@ const handleCalibrateMq = async () => {
   } finally {
     calibratingMq.value = false
   }
+}
+
+const handleCalibrateLuxDoor = async () => {
+  const authed = await requestDeveloperPassword('calibrate auto door lux threshold')
+  if (!authed) return
+  calibratingLuxDoor.value = true
+  luxDoorCalibrationError.value = ''
+  try {
+    const result = await calibrateLuxDoorThreshold()
+    luxDoorCalibrationBaseline.value = Number(result?.luxThreshold ?? 0)
+    const calibratedOffset = Number(result?.luxTriggerOffset ?? props.autoDoorLuxTriggerOffset ?? 50)
+    luxTriggerOffsetInput.value = String(calibratedOffset)
+    emit('update-lux-trigger-offset', calibratedOffset)
+  } catch (error) {
+    luxDoorCalibrationBaseline.value = null
+    luxDoorCalibrationError.value = `Lux calibration failed: ${error.message}`
+  } finally {
+    calibratingLuxDoor.value = false
+  }
+}
+
+const handleLuxTriggerOffsetApply = async () => {
+  const parsedOffset = Number.parseFloat(luxTriggerOffsetInput.value)
+  if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
+    luxDoorCalibrationError.value = 'Offset must be a non-negative number.'
+    luxTriggerOffsetInput.value = String(props.autoDoorLuxTriggerOffset ?? 50)
+    return
+  }
+
+  const authed = await requestDeveloperPassword('update auto door lux trigger offset')
+  if (!authed) {
+    luxTriggerOffsetInput.value = String(props.autoDoorLuxTriggerOffset ?? 50)
+    return
+  }
+
+  luxDoorCalibrationError.value = ''
+  emit('update-lux-trigger-offset', parsedOffset)
 }
 </script>
 
@@ -204,6 +290,48 @@ const handleCalibrateMq = async () => {
         </label>
         <p class="toggle-hint">
           Turn on to use Gemini for food classification; turn off to use local ResNet18 instead.
+        </p>
+
+        <label class="gemini-toggle">
+          <span class="toggle-label">Auto Door Open/Close</span>
+          <input
+            type="checkbox"
+            class="toggle-input"
+            :checked="props.autoDoorEnabled"
+            @change="handleAutoDoorToggle"
+          />
+        </label>
+        <p class="toggle-hint">
+          Opens scanning when ambient light rises above calibrated baseline + offset.
+        </p>
+
+        <button
+          type="button"
+          class="calibrate-button"
+          :disabled="calibratingLuxDoor"
+          @click="handleCalibrateLuxDoor"
+        >
+          {{ calibratingLuxDoor ? 'Calibrating Lux...' : 'Calibrate Auto Door Lux' }}
+        </button>
+
+        <div class="lux-offset-row">
+          <label class="toggle-label" for="lux-trigger-offset-input">LUX Trigger Offset</label>
+          <div class="lux-offset-controls">
+            <input
+              id="lux-trigger-offset-input"
+              v-model="luxTriggerOffsetInput"
+              type="number"
+              min="0"
+              step="0.1"
+              class="lux-offset-input"
+            />
+            <button type="button" class="offset-apply-button" @click="handleLuxTriggerOffsetApply">
+              Apply
+            </button>
+          </div>
+        </div>
+        <p v-if="luxDoorCalibrationStatus" class="toggle-hint calibration-hint">
+          {{ luxDoorCalibrationStatus }}
         </p>
 
         <button
@@ -316,6 +444,42 @@ const handleCalibrateMq = async () => {
 
 .calibration-hint {
   margin-top: 0.55rem;
+}
+
+.lux-offset-row {
+  margin-top: 0.75rem;
+}
+
+.lux-offset-controls {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.lux-offset-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid oklch(0.4 0 0);
+  border-radius: 0.4rem;
+  background: oklch(0.15 0 0);
+  color: oklch(0.95 0 0);
+  font-size: 0.82rem;
+  padding: 0.42rem 0.5rem;
+}
+
+.offset-apply-button {
+  border: 1px solid oklch(0.62 0.13 150);
+  border-radius: 0.4rem;
+  background: oklch(0.38 0.08 150);
+  color: oklch(0.97 0 0);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.42rem 0.7rem;
+  cursor: pointer;
+}
+
+.offset-apply-button:hover {
+  background: oklch(0.44 0.09 150);
 }
 
 .password-modal-overlay {

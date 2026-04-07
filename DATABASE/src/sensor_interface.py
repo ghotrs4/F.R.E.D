@@ -20,6 +20,7 @@ class SensorInterface:
         >Pressure:{value} hPa
         >Approx_altitude:{value} m
         >Humidity:{value} %
+        >Ambient_light_intensity:{value} LUX
     """
 
     # Regex patterns matching main.cpp output format
@@ -29,6 +30,7 @@ class SensorInterface:
         "pressure":    re.compile(r">Pressure:([\d.]+)"),
         "altitude":    re.compile(r">Approx_altitude:([\d.]+)"),
         "humidity":    re.compile(r">Humidity:([\d.]+)"),
+        "ambient_light_intensity": re.compile(r">Ambient_light_intensity:([\d.]+)\s*LUX"),
     }
 
     def __init__(self, port: str | None = None, baudrate: int = 57600):
@@ -100,6 +102,7 @@ class SensorInterface:
         self._humidity: float = 50.0
         self._pressure: float = 1013.25
         self._altitude: float = 0.0
+        self._ambient_light_intensity: float = 0.0
         self._mq_readings: dict[int, int] = {}
         self._mq_raw_readings: dict[int, int] = {}
         self._has_temperature = False
@@ -606,6 +609,16 @@ class SensorInterface:
                     self._validation_errors["altitude_out_of_range"] += 1
                     print(f"[SensorInterface] Failed to parse altitude value: {m.group(1)}")
 
+            elif m := self._PATTERNS["ambient_light_intensity"].match(line):
+                try:
+                    self._ambient_light_intensity = float(m.group(1))
+                    self._last_data_received = time.time()
+                except (ValueError, TypeError):
+                    print(
+                        f"[SensorInterface] Failed to parse ambient light intensity: "
+                        f"{m.group(1)}"
+                    )
+
             elif m := self._PATTERNS["mq"].match(line):
                 try:
                     sensor_id = int(m.group(1))
@@ -645,6 +658,11 @@ class SensorInterface:
         """Returns latest approximate altitude in m."""
         with self._lock:
             return self._altitude
+
+    def get_ambient_light_intensity(self) -> float:
+        """Returns latest ambient light intensity in LUX."""
+        with self._lock:
+            return self._ambient_light_intensity
 
     def get_mq_reading(self, sensor_id: int) -> int | None:
         """
