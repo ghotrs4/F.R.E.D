@@ -14,7 +14,6 @@ defineProps({
 const count = ref(0)
 const temperature = ref(4.0)
 const humidity = ref(50.0)
-const ambientLightIntensity = ref(0.0)
 const sensorsConnected = ref(false)
 const foods = ref([])
 const wasteHistory = ref([])
@@ -146,7 +145,6 @@ onMounted(async () => {
   const sensorData = await getSensorData()
   temperature.value = sensorData.temperature
   humidity.value = sensorData.humidity
-  ambientLightIntensity.value = Number(sensorData.ambient_light_intensity ?? 0)
   sensorsConnected.value = sensorData.connected
   
   // Fetch initial food data
@@ -163,7 +161,6 @@ onMounted(async () => {
     const sensorData = await getSensorData()
     temperature.value = sensorData.temperature
     humidity.value = sensorData.humidity
-    ambientLightIntensity.value = Number(sensorData.ambient_light_intensity ?? 0)
     sensorsConnected.value = sensorData.connected
   }, 1000)
   
@@ -244,15 +241,6 @@ onUnmounted(() => {
             </div>
           </div>
           <HumidityChart :data="temperatureChartData" />
-        </div>
-        <div class="reading-with-chart">
-          <div class="reading-large">
-            <div class="reading-icon">💡</div>
-            <div class="reading-content">
-              <span class="reading-label">Ambient Light</span>
-              <span class="reading-value-large">{{ sensorsConnected ? ambientLightIntensity.toFixed(2) + ' LUX' : '--' }}</span>
-            </div>
-          </div>
         </div>
       </div>
       <div class="reading-with-chart">

@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { loadFoodsFromCSV } from '../utils/csvParser'
 import { getWasteHistory, getTemperatureHistory, getMqHistory, getGasContributors } from '../utils/statsApi'
 import { MQ_SAFE_RANGES, MQ_HIGH_THRESHOLD_OFFSET, classifyMqReading } from '../utils/mqSensorConfig'
-import { getSensorData } from '../utils/sensorApi'
 
 const router = useRouter()
 
@@ -18,7 +17,6 @@ const greeting = ref('Good Morning')
 const foods = ref([])
 const temperature = ref(4.0)
 const humidity = ref(50.0)
-const ambientLightIntensity = ref(0.0)
 const sensorConnected = ref(false)
 const wasteHistory = ref([])
 const recipes = ref([])
@@ -321,18 +319,6 @@ const applyLatestEnvSample = (samples) => {
   }
 }
 
-const applyLatestSensorData = (sensorData) => {
-  if (!sensorData || typeof sensorData !== 'object') return
-  if (sensorData.temperature != null) {
-    temperature.value = Number(sensorData.temperature)
-  }
-  if (sensorData.humidity != null) {
-    humidity.value = Number(sensorData.humidity)
-  }
-  ambientLightIntensity.value = Number(sensorData.ambient_light_intensity ?? 0)
-  sensorConnected.value = Boolean(sensorData.connected)
-}
-
 const handleFoodAdded = async () => {
   // Refresh foods list when a new item is added via global scanner
   foods.value = await loadFoodsFromCSV()
@@ -349,15 +335,13 @@ onMounted(async () => {
   wasteHistory.value = await getWasteHistory()
   temperatureHistory.value = await getTemperatureHistory({ scope: 'long' })
   mqHistory.value = await getMqHistory({ scope: 'recent', limit: 50 })
-  const [latestEnvSamples, gasContributors, sensorData] = await Promise.all([
+  const [latestEnvSamples, gasContributors] = await Promise.all([
     getTemperatureHistory({ scope: 'recent', limit: 1 }),
-    getGasContributors(),
-    getSensorData()
+    getGasContributors()
   ])
-  applyLatestSensorData(sensorData)
   applyLatestEnvSample(latestEnvSamples)
   gasContributorState.value = gasContributors
-  sensorConnected.value = Boolean(gasContributors.connected || sensorData.connected)
+  sensorConnected.value = Boolean(gasContributors.connected)
   
   // Load recipes from localStorage (no API calls)
   // Recipes are cached by the Recipes page
@@ -400,16 +384,14 @@ onMounted(async () => {
   }, 30000)
 
   mqUpdateInterval = setInterval(async () => {
-    const [history, gasContributors, latestEnvSamples, sensorData] = await Promise.all([
+    const [history, gasContributors, latestEnvSamples] = await Promise.all([
       getMqHistory({ scope: 'recent', limit: 50 }),
       getGasContributors(),
-      getTemperatureHistory({ scope: 'recent', limit: 1 }),
-      getSensorData()
+      getTemperatureHistory({ scope: 'recent', limit: 1 })
     ])
     mqHistory.value = history
     gasContributorState.value = gasContributors
-    applyLatestSensorData(sensorData)
-    sensorConnected.value = Boolean(gasContributors.connected || sensorData.connected)
+    sensorConnected.value = Boolean(gasContributors.connected)
     applyLatestEnvSample(latestEnvSamples)
   }, 1000)
 })
@@ -466,10 +448,6 @@ onUnmounted(() => {
         <div class="reading-item">
           <span class="reading-label">Humidity</span>
           <span class="reading-value" :style="{ color: getReadingStatusColor(humidity, SAFE_HUMIDITY_MIN, SAFE_HUMIDITY_MAX, sensorConnected) }">{{ sensorConnected ? humidity.toFixed(1) + '%' : '--' }}</span>
-        </div>
-        <div class="reading-item">
-          <span class="reading-label">Ambient Light</span>
-          <span class="reading-value">{{ sensorConnected ? ambientLightIntensity.toFixed(2) + ' LUX' : '--' }}</span>
         </div>
         <div class="reading-item">
           <span class="reading-label">Gas Levels</span>
