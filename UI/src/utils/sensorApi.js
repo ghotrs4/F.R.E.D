@@ -5,7 +5,7 @@ const API_BASE_URL = apiUrl('/api')
 
 /**
  * Fetch current sensor readings
- * @returns {Promise<{temperature: number, humidity: number, connected: boolean}>}
+ * @returns {Promise<{temperature: number, humidity: number, ambient_light_intensity: number, connected: boolean}>}
  */
 export async function getSensorData() {
   try {
@@ -21,6 +21,7 @@ export async function getSensorData() {
     return {
       temperature: 4.0,
       humidity: 50.0,
+      ambient_light_intensity: 0.0,
       connected: false
     }
   }

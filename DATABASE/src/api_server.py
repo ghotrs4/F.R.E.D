@@ -116,11 +116,16 @@ def _get_sensor_snapshot():
             connected = bool(payload.get('connected', False))
             temperature = _coerce_float(payload.get('temperature'), 4.0)
             humidity = _coerce_float(payload.get('humidity'), 50.0)
+            ambient_light_intensity = _coerce_float(
+                payload.get('ambient_light_intensity', payload.get('ambientLightIntensity')),
+                0.0,
+            )
             mq_readings = _normalize_mq_readings(payload.get('mq_readings', {}))
             return {
                 'connected': connected,
                 'temperature': temperature,
                 'humidity': humidity,
+                'ambient_light_intensity': ambient_light_intensity,
                 'mq_readings': mq_readings,
             }
         except Exception as e:
@@ -129,6 +134,7 @@ def _get_sensor_snapshot():
                 'connected': False,
                 'temperature': 4.0,
                 'humidity': 50.0,
+                'ambient_light_intensity': 0.0,
                 'mq_readings': {},
             }
 
@@ -143,6 +149,7 @@ def _get_sensor_snapshot():
         'connected': connected,
         'temperature': sensor.get_temperature(),
         'humidity': sensor.get_humidity(),
+        'ambient_light_intensity': sensor.get_ambient_light_intensity(),
         'mq_readings': mq_readings,
     }
 
@@ -2385,16 +2392,18 @@ def proxy_camera_snapshot():
 
 @app.route('/api/sensor', methods=['GET'])
 def get_sensor_data():
-    """Get current sensor readings (temperature, humidity, and MQ gas sensors)"""
+    """Get current sensor readings (temperature, humidity, ambient light, and MQ gas sensors)"""
     snapshot = _get_sensor_snapshot()
     temperature = snapshot['temperature']
     humidity = snapshot['humidity']
+    ambient_light_intensity = snapshot['ambient_light_intensity']
     connected = snapshot['connected']
     mq_readings = snapshot['mq_readings']
 
     return jsonify({
         'temperature': temperature,
         'humidity': humidity,
+        'ambient_light_intensity': ambient_light_intensity,
         'connected': connected,
         'mq_readings': mq_readings
     })

@@ -20,6 +20,7 @@ class SensorInterface:
         >Pressure:{value} hPa
         >Approx_altitude:{value} m
         >Humidity:{value} %
+        >Ambient_light_intensity:{value} LUX
     """
 
     # Regex patterns matching main.cpp output format
@@ -29,6 +30,7 @@ class SensorInterface:
         "pressure":    re.compile(r">Pressure:([\d.]+)"),
         "altitude":    re.compile(r">Approx_altitude:([\d.]+)"),
         "humidity":    re.compile(r">Humidity:([\d.]+)"),
+        "ambient_light_intensity": re.compile(r">Ambient_light_intensity:([\d.]+)"),
     }
 
     def __init__(self, port: str | None = None, baudrate: int = 57600):
@@ -94,16 +96,30 @@ class SensorInterface:
         )
         self._mq_min = self._env_float('SENSOR_MQ_MIN', self._MQ_MIN)
         self._mq_max = self._env_float('SENSOR_MQ_MAX', self._MQ_MAX)
+        self._ambient_light_min = self._env_float(
+            'SENSOR_AMBIENT_LIGHT_MIN',
+            self._AMBIENT_LIGHT_MIN,
+        )
+        self._ambient_light_max = self._env_float(
+            'SENSOR_AMBIENT_LIGHT_MAX',
+            self._AMBIENT_LIGHT_MAX,
+        )
+        self._ambient_light_max_delta = max(
+            0.0,
+            self._env_float('SENSOR_AMBIENT_LIGHT_MAX_DELTA', self._AMBIENT_LIGHT_MAX_DELTA),
+        )
 
         # Latest sensor readings
         self._temperature: float = 4.0
         self._humidity: float = 50.0
         self._pressure: float = 1013.25
         self._altitude: float = 0.0
+        self._ambient_light_intensity: float = 0.0
         self._mq_readings: dict[int, int] = {}
         self._mq_raw_readings: dict[int, int] = {}
         self._has_temperature = False
         self._has_humidity = False
+        self._has_ambient_light_intensity = False
 
         # Data validation tracking
         self._validation_errors: dict[str, int] = {
@@ -116,6 +132,8 @@ class SensorInterface:
             "altitude_out_of_range": 0,
             "altitude_delta_exceeded": 0,
             "mq_out_of_range": 0,
+            "ambient_light_intensity_out_of_range": 0,
+            "ambient_light_intensity_delta_exceeded": 0,
         }
         self._last_data_received: float = 0.0   # epoch time of last valid parse
         self._lock = threading.Lock()
@@ -187,6 +205,13 @@ class SensorInterface:
     # Configurable via SENSOR_MQ_MIN and SENSOR_MQ_MAX env vars.
     _MQ_MIN: float = 0.0
     _MQ_MAX: float = 4095.0
+
+    # Ambient light intensity bounds in lux.
+    # Configurable via SENSOR_AMBIENT_LIGHT_MIN and SENSOR_AMBIENT_LIGHT_MAX.
+    _AMBIENT_LIGHT_MIN: float = 0.0
+    _AMBIENT_LIGHT_MAX: float = 200000.0
+    # Maximum allowed single-step change in lux. Use 0 to disable.
+    _AMBIENT_LIGHT_MAX_DELTA: float = 50000.0
 
     @staticmethod
     def _env_float(name: str, default: float) -> float:
@@ -429,6 +454,7 @@ class SensorInterface:
             self._is_connected = False
             self._has_temperature = False
             self._has_humidity = False
+            self._has_ambient_light_intensity = False
             self._mq_raw_readings = {}
             self._mq_readings = {}
             self._consecutive_serial_errors = 0
@@ -553,6 +579,24 @@ class SensorInterface:
             return False
         return True
 
+    def _validate_ambient_light_intensity(self, value: float) -> bool:
+        """Validate ambient light intensity reading. Returns True if acceptable."""
+        if not self._is_within_bounds(
+            "ambient_light_intensity",
+            value,
+            self._ambient_light_min,
+            self._ambient_light_max,
+        ):
+            return False
+        if not self._is_within_delta(
+            "ambient_light_intensity",
+            value,
+            self._ambient_light_intensity if self._has_ambient_light_intensity else None,
+            self._ambient_light_max_delta,
+        ):
+            return False
+        return True
+
     def _parse_line(self, line: str) -> None:
         """
         Parse one line of serial output from main.cpp and update local state.
@@ -622,6 +666,20 @@ class SensorInterface:
                         f"value={m.group(2)}"
                     )
 
+            elif m := self._PATTERNS["ambient_light_intensity"].match(line):
+                try:
+                    value = float(m.group(1))
+                    if self._validate_ambient_light_intensity(value):
+                        self._ambient_light_intensity = value
+                        self._has_ambient_light_intensity = True
+                        self._last_data_received = time.time()
+                except (ValueError, TypeError):
+                    self._validation_errors["ambient_light_intensity_out_of_range"] += 1
+                    print(
+                        "[SensorInterface] Failed to parse ambient light intensity value: "
+                        f"{m.group(1)}"
+                    )
+
     # ------------------------------------------------------------------
     # Public accessors
     # ------------------------------------------------------------------
@@ -645,6 +703,11 @@ class SensorInterface:
         """Returns latest approximate altitude in m."""
         with self._lock:
             return self._altitude
+
+    def get_ambient_light_intensity(self) -> float:
+        """Returns latest ambient light intensity in lux."""
+        with self._lock:
+            return self._ambient_light_intensity
 
     def get_mq_reading(self, sensor_id: int) -> int | None:
         """
