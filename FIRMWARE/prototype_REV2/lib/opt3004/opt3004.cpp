@@ -24,18 +24,19 @@ opt3004::opt3004(TwoWire* Wire){
     wire = Wire;
 }
 
-void opt3004::begin(uint8_t sda, uint8_t scl){
+bool opt3004::begin(uint8_t sda, uint8_t scl){
     Wire.begin(sda, scl, 100000); // init the I2C bus paramaters
   
     Wire.beginTransmission(opt3004_I2C_ADDR);
     uint8_t error = Wire.endTransmission();
     if (error == 0) {
         log_e("OPT3004 sensor active on I2C.");
+        return true;
     }
     else{
         log_e("OPT3004 I2C probe failed with code: %u", error);
-        log_e("Unable to establish OPT3004 sensor on I2C. Halting.");
-        while(1){}
+        log_e("Warning, unable to establish OPT3004 sensor over I2C.");
+        return false;
     }
 }
 
@@ -66,7 +67,6 @@ void opt3004::WRITE_REG(uint8_t reg, uint16_t val){
     uint8_t err=wire->endTransmission();
     if(err){
         log_e("Error when writing to OPT3004: %d", err);
-        while(1){}
     }
 }
 

@@ -37,7 +37,7 @@ class opt3004{
         TwoWire* wire;
     public:
         opt3004(TwoWire* Wire);
-        void begin(uint8_t sda, uint8_t scl);
+        bool begin(uint8_t sda, uint8_t scl);
         void WRITE_REG(uint8_t reg, uint16_t val);
         uint16_t READ_REG(uint8_t reg);
         float getResult(void);

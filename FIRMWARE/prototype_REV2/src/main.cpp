@@ -50,6 +50,7 @@ const uint8_t sensorMapping[8] = {
 
 //I2C Globals
 opt3004 opt(&Wire);
+bool optOk;
 
 SensirionI2cSht3x sht;
 static char errorMessage[64];
@@ -77,8 +78,19 @@ void setup(void) {
   /*...*/
 
   //init I2C buses
-  opt.begin(SDA0_PIN, SCL0_PIN);      //OPT3004 on Wire0
-  initOpt();
+  optOk = opt.begin(SDA0_PIN, SCL0_PIN);      //OPT3004 on Wire0
+  if(optOk){
+    initOpt();
+  }
+  else{
+#if 1 == BT_ENABLE
+  if(SERIAL_CONNECTION.hasClient() ){
+#else
+    {
+#endif
+      SERIAL_CONNECTION.println("Skipping initialization of OPT3004, unable to establish connection.");
+    }
+  }
 
   Wire1.begin(SDA1_PIN, SCL1_PIN);    // SHT on Wire1
   initSHT();
@@ -200,7 +212,14 @@ void printShtValues(void) {
 }
 
 void printOptValues(void){
-  float data = opt.getResult();
+  float data;
+  if(optOk){
+    data = opt.getResult();
+  }
+  else{
+    data = 0;
+  }
+  
 
 #if 1 == BT_ENABLE
   if(SERIAL_CONNECTION.hasClient() ){
